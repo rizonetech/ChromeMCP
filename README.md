@@ -45,33 +45,36 @@ Two things are worth pointing out:
 
 ## Quick start
 
-All commands run from this repo's root inside WSL.
+From this repo's root inside WSL:
 
 ```bash
-# 1. Launch Chrome with CDP enabled against the project-local profile.
-#    Idempotent — re-running while Chrome is already up is a no-op.
-./chrome
-
-# 2. One-time per machine: bridge Chrome's debug port from Windows
-#    loopback to a WSL-reachable address. Triggers a UAC prompt.
-./setup-bridge
-
-# 3. Start Playwright MCP as a long-running HTTP/SSE service.
-#    First run installs deps automatically (npm ci).
-./mcp-up
-
-# 4. Sanity check.
-bash mcp/test.sh
+./mcp-up                         # brings up the entire stack
+bash mcp/test.sh                 # sanity check (optional)
 ```
 
-When you're done:
+That single `./mcp-up` is enough. It pre-flights the upstream CDP endpoint and, if it's not reachable, transparently:
+
+1. Launches Chrome on Windows via `launcher/Launch-Chrome.ps1` (idempotent, no-op if Chrome is already up).
+2. Installs the WSL↔Windows bridge via `Setup-Bridge.cmd` if Chrome is up but its debug port isn't reachable from WSL — this pops a one-time UAC prompt on your Windows desktop. Approve it.
+3. Starts the Playwright MCP HTTP/SSE service. First run also runs `npm ci` to install dependencies.
+
+The first time, sign in to whichever sites you want the agent to access in the new Chrome window. The profile lives in `%LOCALAPPDATA%\ChromeMCP\Profile` and persists across restarts, so you only sign in once.
+
+To opt out of either auto-step (e.g. for CI or restricted environments):
 
 ```bash
+MCP_NO_AUTO_CHROME=1 ./mcp-up    # don't auto-launch Chrome
+MCP_NO_AUTO_BRIDGE=1 ./mcp-up    # don't auto-install the bridge (skip UAC)
+```
+
+The individual scripts also still work for explicit, manual control:
+
+```bash
+./chrome                         # launch Chrome (e.g. with -Force or a custom -Port)
+./setup-bridge                   # install the bridge by itself
+./setup-bridge /remove           # tear the portproxy + firewall rule down
 ./mcp-down                       # stop the MCP server
-./setup-bridge /remove           # tear the portproxy + firewall rule down (optional)
 ```
-
-Sign in to whichever sites you want the agent to access on the very first `./chrome` launch. The profile persists, so you only do that once.
 
 ## Connecting MCP clients
 
@@ -119,7 +122,7 @@ The Chrome side uses `9222` by default; the PowerShell launcher takes `-Port` to
 
 ## Troubleshooting
 
-**`ERROR: Chrome CDP not reachable at http://172.x.x.x:9222`** — Chrome isn't running, the bridge isn't set up, or both. Run `./chrome` then `./setup-bridge` from this repo's root.
+**`ERROR: Chrome CDP not reachable at http://172.x.x.x:9222`** — `./mcp-up` already tries to auto-launch Chrome and auto-install the bridge. If you still see this error, either you denied/ignored the UAC prompt for the bridge install, or you have `MCP_NO_AUTO_CHROME` / `MCP_NO_AUTO_BRIDGE` set in your environment. Re-run `./mcp-up` and approve the UAC prompt, or run `./chrome` and `./setup-bridge` explicitly.
 
 **Bridge install reports "Could not find vEthernet (WSL) adapter."** — WSL2 isn't currently running on the Windows side. Open any WSL shell first, then re-run `./setup-bridge`.
 

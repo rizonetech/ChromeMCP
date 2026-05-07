@@ -37,11 +37,71 @@ if [ -f "$PID_FILE" ] && kill -0 "$(cat "$PID_FILE")" 2>/dev/null; then
 fi
 
 # --- Pre-flight: verify upstream CDP is reachable. ------------------------
-if ! curl -s --max-time 2 "${CDP_ENDPOINT}/json/version" -o /dev/null; then
+probe_cdp() {
+  curl -s --max-time 4 "${CDP_ENDPOINT}/json/version" -o /dev/null
+}
+
+# WSL2 routing to the Windows-side portproxy can occasionally stall a fresh
+# TCP connection. Retry a couple of times before declaring CDP unreachable
+# so we don't trigger the auto-launch path on a flaky first probe.
+initial_probe_cdp() {
+  for i in 1 2 3; do
+    probe_cdp && return 0
+    sleep 0.3
+  done
+  return 1
+}
+
+# If CDP is down, try to auto-launch Chrome on Windows via the PowerShell
+# launcher. The launcher is idempotent (no-op if Chrome is already up), so
+# this is safe to call speculatively. Skip with MCP_NO_AUTO_CHROME=1.
+if ! initial_probe_cdp; then
+  if [ -z "${MCP_NO_AUTO_CHROME:-}" ] && command -v powershell.exe >/dev/null 2>&1; then
+    LAUNCHER_PS1="$(wslpath -w "${PROJECT_ROOT}/launcher/Launch-Chrome.ps1" 2>/dev/null || true)"
+    if [ -n "$LAUNCHER_PS1" ]; then
+      echo "Chrome CDP not reachable - auto-launching Chrome on Windows..."
+      powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$LAUNCHER_PS1" >/dev/null || true
+      # Allow a few seconds for the bridge to forward the freshly-started Chrome.
+      for i in $(seq 1 15); do
+        probe_cdp && break
+        sleep 0.5
+      done
+    fi
+  fi
+fi
+
+# If CDP is STILL unreachable, the most likely remaining cause is that the
+# WSL<->Windows bridge isn't installed. Auto-trigger Setup-Bridge.cmd, which
+# self-elevates with a UAC prompt on the Windows desktop. One-time per
+# machine. Skip with MCP_NO_AUTO_BRIDGE=1.
+if ! probe_cdp; then
+  if [ -z "${MCP_NO_AUTO_BRIDGE:-}" ] && command -v cmd.exe >/dev/null 2>&1; then
+    BRIDGE_CMD="$(wslpath -w "${PROJECT_ROOT}/Setup-Bridge.cmd" 2>/dev/null || true)"
+    if [ -n "$BRIDGE_CMD" ]; then
+      echo "Installing the WSL<->Windows bridge (one-time per machine)..."
+      echo "  Approve the UAC prompt on your Windows desktop to continue."
+      # The .cmd self-elevates via Start-Process -Verb RunAs and exits fast;
+      # the elevated copy keeps running in the background.
+      cmd.exe /c "$BRIDGE_CMD" </dev/null >/dev/null 2>&1 || true
+      echo "  Waiting up to 90s for the bridge to come live..."
+      for i in $(seq 1 180); do
+        probe_cdp && break
+        sleep 0.5
+      done
+    fi
+  fi
+fi
+
+if ! probe_cdp; then
   echo "ERROR: Chrome CDP not reachable at ${CDP_ENDPOINT}" >&2
-  echo "  Run from project root: ${PROJECT_ROOT}" >&2
+  echo "  Auto-launch + auto-bridge attempted; CDP still unreachable." >&2
+  echo "  Possible causes:" >&2
+  echo "    * UAC denied or timed out (re-run ./mcp-up to retry)" >&2
+  echo "    * Chrome failed to start on Windows" >&2
+  echo "    * MCP_NO_AUTO_CHROME or MCP_NO_AUTO_BRIDGE is set in the env" >&2
+  echo "  Manual fallback from project root ${PROJECT_ROOT}:" >&2
   echo "    ./chrome           # launch Chrome with --remote-debugging-port=9222" >&2
-  echo "    ./setup-bridge     # one-time, makes 9222 reachable from WSL" >&2
+  echo "    ./setup-bridge     # one-time, UAC required, exposes 9222 to WSL" >&2
   exit 1
 fi
 
