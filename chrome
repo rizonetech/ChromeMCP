@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# WSL wrapper: launches the Windows-side PowerShell launcher.
+# Resolves its own real path (handles symlinks) so it stays portable.
+set -euo pipefail
+SELF="$(readlink -f "$0")"
+DIR="$(dirname "$SELF")"
+PS1_WIN_PATH="$(wslpath -w "$DIR/launcher/Launch-Chrome.ps1")"
+exec powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$PS1_WIN_PATH" "$@"

@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# Project root wrapper: stops the shared Playwright MCP server.
+set -euo pipefail
+SELF="$(readlink -f "$0")"
+exec bash "$(dirname "$SELF")/mcp/stop.sh" "$@"

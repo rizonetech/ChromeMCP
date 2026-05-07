@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# Project root wrapper: starts the shared Playwright MCP server.
+# Pass-through for any env vars (PORT, HOST, CDP_ENDPOINT).
+set -euo pipefail
+SELF="$(readlink -f "$0")"
+exec bash "$(dirname "$SELF")/mcp/start.sh" "$@"

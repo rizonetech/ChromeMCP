@@ -1,0 +1,13 @@
+# Chrome profile lives in %LOCALAPPDATA%\ChromeMCP\Profile (out-of-tree).
+# Nothing browser-related belongs in this repo.
+
+# MCP server runtime state
+mcp/node_modules/
+mcp/logs/
+mcp/.*.pid
+mcp/.playwright-mcp/
+mcp/demo-output/
+
+# OS junk
+Thumbs.db
+.DS_Store

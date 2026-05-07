@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+# WSL wrapper: triggers the Windows-side bridge setup with UAC elevation.
+# The Windows side will pop a UAC dialog. Approve it to proceed.
+#
+# Usage:
+#   ./setup-bridge          - install/refresh the bridge
+#   ./setup-bridge /remove  - tear it down
+set -euo pipefail
+SELF="$(readlink -f "$0")"
+DIR="$(dirname "$SELF")"
+CMD_WIN_PATH="$(wslpath -w "$DIR/Setup-Bridge.cmd")"
+echo "Triggering Windows-side setup at: $CMD_WIN_PATH"
+echo "Watch for the UAC dialog on your Windows desktop."
+exec cmd.exe /c "$CMD_WIN_PATH" "$@"
