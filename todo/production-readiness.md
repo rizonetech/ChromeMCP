@@ -1,17 +1,28 @@
 # ChromeMCP — Production Readiness Roadmap
 
-> Living checklist of what ChromeMCP needs to graduate from "well-crafted personal dev tool" to "OSS v1.0" and onward to "production service." Sourced from the 2026-05-07 readiness audit.
+> Living checklist of what ChromeMCP needs to deliver on its mission ("easy to install + works out of the box for Windows↔WSL2 browser automation"), then graduate to OSS v1.0, then to a production service. Sourced from the 2026-05-07 readiness audit; re-prioritized on 2026-05-18 against the mission axis.
+
+## Mission
+
+ChromeMCP makes a signed-in, full-Chrome browser on Windows drivable by MCP clients running inside WSL2, with zero hand-tuning of port-proxies, firewalls, or CDP endpoints.
+
+**Two non-negotiables:**
+1. **Easy to install** — `git clone` → one script → working stack. No reading 15 setup docs.
+2. **Works out of the box** — survives WSL IP drift, Chrome crashes, and Windows reboots without manual re-running of setup scripts.
+
+Everything below is graded against these two first, then against OSS / production milestones.
 
 ## How to use this doc
 
 - Each gap below has actionable subtasks (`- [ ]`) and explicit **acceptance criteria** so "done" is not subjective.
 - File-line references (e.g. `mcp/start.sh:65`) are starting points, not exhaustive — anchors only.
-- Severity legend:
-  - 🔴 **Critical** — block any non-personal use
-  - 🟠 **High** — block OSS recommendation / shared use
-  - 🟡 **Medium** — block "stable" claim
-  - 🟢 **Low** — OSS hygiene / polish
-- Two "roadmap" sections at the bottom cross-reference these gaps to define ship gates for **v1.0 OSS** and **production service** milestones.
+- Severity legend (mission-first):
+  - 🔴 **Critical** — blocks "easy to install" or "works out of the box"
+  - 🟠 **High** — blocks shared / CI use, OSS recommendation, or causes silent failure after install
+  - 🟡 **Medium** — blocks "stable" claim or v1.0 OSS milestone hygiene
+  - 🟢 **Low** — polish / hygiene; doesn't affect end-user experience
+- Items within each severity section are ordered by mission priority (top = highest mission impact).
+- Three "roadmap" sections at the bottom cross-reference these gaps into ship gates for **install-and-forget** (the bullseye), **v1.0 OSS**, and **production service** milestones.
 
 ---
 
@@ -33,8 +44,47 @@
 
 ---
 
+### G5. WSL2 vEthernet IP drift auto-heal
+**Why it matters.** `Setup-WSL-Portproxy.ps1` captures *today's* WSL gateway IP and bakes it into a `netsh portproxy` entry and a Defender firewall rule. WSL2 may assign a different gateway IP after Windows reboots, hyper-V resets, or distro upgrades, silently breaking the bridge.
+
+**User-facing impact.** The stack stops working after a Windows reboot until the user re-runs `setup-bridge`. Direct breach of the "works out of the box" promise.
+
+- [ ] In `mcp/start.sh`: capture current WSL gateway via `ip route show | awk '/^default/ {print $3}'` (already done — line 20)
+- [ ] Read the netsh portproxy entry from Windows side (via `powershell.exe netsh interface portproxy show v4tov4`) and parse the listenaddress
+- [ ] Compare current gateway IP to bridge listenaddress; if mismatch, log and trigger automatic `./setup-bridge` refresh
+- [ ] Or simpler: if first-stage and second-stage CDP probes both fail despite `Launch-Chrome.ps1` succeeding, treat as drift and re-run `Setup-Bridge.cmd` (we already have stage-2 auto-trigger)
+- [ ] Add a `./bridge-check` standalone script for explicit verification
+- [ ] Update `Setup-WSL-Portproxy.ps1` to support `-Refresh` mode that idempotently updates the listenaddress + firewall rule without needing `-Remove` first
+- [ ] Add a startup banner in `mcp-up` showing "bridge OK at <IP>:9222" when bridge passes pre-flight
+- [ ] Document the self-healing behavior in `README.md`
+
+**Acceptance criteria.** After a forced WSL gateway IP change (e.g. `wsl --shutdown` followed by IP change), first `./mcp-up` detects drift and refreshes the bridge automatically; CDP becomes reachable without the user knowing what happened.
+
+---
+
+### G11. Installer / packaging
+**Why it matters.** Today, ChromeMCP discovery is git clone + read README. No npm package, no Winget manifest, no auto-update channel. Onboarding cost is high.
+
+**User-facing impact.** Every new user must clone the repo and read multiple setup docs to get a working install. There is no `curl ... | bash`-style one-liner. Direct breach of the "easy to install" promise.
+
+- [ ] Decide minimum viable distribution: GitHub Releases tarball + `install.sh` (cheapest) | npm publish (`@rizonetech/chromemcp`) | Winget for the Windows-side launcher
+- [ ] Write `scripts/install.sh`: download latest GitHub release tarball, extract to `~/.local/share/chromemcp`, symlink `chromemcp` into `~/.local/bin`
+- [ ] Add `--upgrade` flag to `install.sh` that compares installed version (from `package.json` or a `VERSION` file) to latest release tag
+- [ ] Optional: publish to npm as `@rizonetech/chromemcp` with `bin` entries for the wrappers
+- [ ] Optional: Winget manifest in `winget-pkgs/manifests/r/Rizonetech/ChromeMCP/...`
+- [ ] Add a release workflow (`.github/workflows/release.yml`) that builds the tarball on tag push and publishes the GitHub Release
+- [ ] Update `README.md` with one-line install instructions
+
+**Acceptance criteria.** `curl -fsSL https://github.com/.../install.sh | bash` works on a fresh WSL2 + Chrome host and produces a working `chromemcp` command.
+
+---
+
+## 🟠 High
+
 ### G2. Authentication on the MCP endpoint
 **Why it matters.** The MCP server listens on `127.0.0.1:8931` with no auth. Any process on the host (including malicious npm install scripts, sibling containers sharing the loopback, or other users on a shared machine) can drive a fully signed-in Chrome with all your cookies and saved sessions. The current security model is "trust everything that resolves localhost" — fine on a single-user dev box, dangerous on a CI runner, jumpbox, or shared dev VM.
+
+> **Mission note.** Demoted from 🔴 Critical (severity-axis) to 🟠 High (mission-axis): for the single-developer-machine bullseye, this isn't a blocker. It becomes mission-critical the moment ChromeMCP is recommended for shared hosts or CI.
 
 - [ ] Decide auth model: shared bearer token (simplest) | per-client tokens with revocation | mTLS (heaviest)
 - [ ] Generate a token at first run: write to `~/.config/chromemcp/token` with `0600` perms
@@ -50,8 +100,6 @@
 **Acceptance criteria.** A request without a valid token returns HTTP 401; `mcp/test.sh` works only after picking up the token from disk; setting `MCP_NO_AUTH=1` permits unauthenticated access with a loud warning logged on every request.
 
 ---
-
-## 🟠 High
 
 ### G3. Process supervision
 **Why it matters.** `mcp/start.sh:61-67` spawns the node process with `setsid nohup ... &` — fire-and-forget. If `node` crashes, OOMs, or hits an uncaught exception, no restart happens. The PID file is the only liveness signal, and it lies (it stays even after the process is gone).
@@ -87,19 +135,22 @@
 
 ---
 
-### G5. WSL2 vEthernet IP drift auto-heal
-**Why it matters.** `Setup-WSL-Portproxy.ps1` captures *today's* WSL gateway IP and bakes it into a `netsh portproxy` entry and a Defender firewall rule. WSL2 may assign a different gateway IP after Windows reboots, hyper-V resets, or distro upgrades, silently breaking the bridge.
+### G10. Subnet-mask auto-detection (replace hardcoded /20)
+**Why it matters.** `launcher/Setup-WSL-Portproxy.ps1:56` hardcodes `/20` as the WSL2 subnet mask:
+```powershell
+Subnet = ($ip -replace '\.\d+$', '.0') + '/20'
+```
+Microsoft has changed WSL2's subnet allocation in past Windows updates. If they change the default mask, the firewall rule's `RemoteAddress` becomes wrong and may either over-permit (loose mask) or block legitimate WSL traffic (tight mask).
 
-- [ ] In `mcp/start.sh`: capture current WSL gateway via `ip route show | awk '/^default/ {print $3}'` (already done — line 20)
-- [ ] Read the netsh portproxy entry from Windows side (via `powershell.exe netsh interface portproxy show v4tov4`) and parse the listenaddress
-- [ ] Compare current gateway IP to bridge listenaddress; if mismatch, log and trigger automatic `./setup-bridge` refresh
-- [ ] Or simpler: if first-stage and second-stage CDP probes both fail despite `Launch-Chrome.ps1` succeeding, treat as drift and re-run `Setup-Bridge.cmd` (we already have stage-2 auto-trigger)
-- [ ] Add a `./bridge-check` standalone script for explicit verification
-- [ ] Update `Setup-WSL-Portproxy.ps1` to support `-Refresh` mode that idempotently updates the listenaddress + firewall rule without needing `-Remove` first
-- [ ] Add a startup banner in `mcp-up` showing "bridge OK at <IP>:9222" when bridge passes pre-flight
-- [ ] Document the self-healing behavior in `README.md`
+**User-facing impact.** Users on non-default WSL2 network configs hit silent firewall mismatches at install time. Setup looks like it succeeded but tools fail with cryptic CDP errors. Breaches "easy to install."
 
-**Acceptance criteria.** After a forced WSL gateway IP change (e.g. `wsl --shutdown` followed by IP change), first `./mcp-up` detects drift and refreshes the bridge automatically; CDP becomes reachable without the user knowing what happened.
+- [ ] Replace the hardcoded `/20` in `Get-WslAdapterIP` with detection: read `PrefixLength` from `Get-NetIPAddress -InterfaceIndex $adapter.ifIndex`
+- [ ] Compute subnet from IP + actual prefix length (use a helper function, not regex math)
+- [ ] If detection fails (for whatever Microsoft reason), fall back to `/20` with a `Write-Warning`
+- [ ] Add a Pester (or plain PowerShell) unit test for the subnet computation
+- [ ] Verify on multiple WSL2 distros: Ubuntu, Debian, Alpine
+
+**Acceptance criteria.** `Setup-Bridge.cmd` succeeds and produces a correctly-masked firewall rule on hosts where the WSL2 prefix length is anything other than /20.
 
 ---
 
@@ -191,38 +242,6 @@
 
 ---
 
-### G10. Subnet-mask auto-detection (replace hardcoded /20)
-**Why it matters.** `launcher/Setup-WSL-Portproxy.ps1:56` hardcodes `/20` as the WSL2 subnet mask:
-```powershell
-Subnet = ($ip -replace '\.\d+$', '.0') + '/20'
-```
-Microsoft has changed WSL2's subnet allocation in past Windows updates. If they change the default mask, the firewall rule's `RemoteAddress` becomes wrong and may either over-permit (loose mask) or block legitimate WSL traffic (tight mask).
-
-- [ ] Replace the hardcoded `/20` in `Get-WslAdapterIP` with detection: read `PrefixLength` from `Get-NetIPAddress -InterfaceIndex $adapter.ifIndex`
-- [ ] Compute subnet from IP + actual prefix length (use a helper function, not regex math)
-- [ ] If detection fails (for whatever Microsoft reason), fall back to `/20` with a `Write-Warning`
-- [ ] Add a Pester (or plain PowerShell) unit test for the subnet computation
-- [ ] Verify on multiple WSL2 distros: Ubuntu, Debian, Alpine
-
-**Acceptance criteria.** `Setup-Bridge.cmd` succeeds and produces a correctly-masked firewall rule on hosts where the WSL2 prefix length is anything other than /20.
-
----
-
-### G11. Installer / packaging
-**Why it matters.** Today, ChromeMCP discovery is git clone + read README. No npm package, no Winget manifest, no auto-update channel. Onboarding cost is high.
-
-- [ ] Decide minimum viable distribution: GitHub Releases tarball + `install.sh` (cheapest) | npm publish (`@rizonetech/chromemcp`) | Winget for the Windows-side launcher
-- [ ] Write `scripts/install.sh`: download latest GitHub release tarball, extract to `~/.local/share/chromemcp`, symlink `chromemcp` into `~/.local/bin`
-- [ ] Add `--upgrade` flag to `install.sh` that compares installed version (from `package.json` or a `VERSION` file) to latest release tag
-- [ ] Optional: publish to npm as `@rizonetech/chromemcp` with `bin` entries for the wrappers
-- [ ] Optional: Winget manifest in `winget-pkgs/manifests/r/Rizonetech/ChromeMCP/...`
-- [ ] Add a release workflow (`.github/workflows/release.yml`) that builds the tarball on tag push and publishes the GitHub Release
-- [ ] Update `README.md` with one-line install instructions
-
-**Acceptance criteria.** `curl -fsSL https://github.com/.../install.sh | bash` works on a fresh WSL2 + Chrome host and produces a working `chromemcp` command.
-
----
-
 ## 🟡 Medium-Low
 
 ### G12. Multi-user / multi-profile story (or explicit non-support)
@@ -301,16 +320,30 @@ Microsoft has changed WSL2's subnet allocation in past Windows updates. If they 
 
 ---
 
-## Roadmap: v1.0 OSS release (cheap path, ~1-2 days)
+## Roadmap: Install-and-forget release (the bullseye)
 
-Ship gate: every box below checked.
+Ship gate: every box below checked. This is the milestone that delivers on the mission — `git clone` → one script → working stack that survives a Windows reboot.
 
-- [ ] **G1** — pin to a stable `@playwright/mcp` release
+- [ ] **G11** — one-line installer covering both Windows-side bridge setup and WSL-side MCP install
+- [ ] **G5** — IP-drift auto-heal in `mcp-up` (cheap version: re-run `setup-bridge` if stage-2 trigger fires after Chrome auto-launch)
+- [ ] **G10** — subnet auto-detection in `Setup-WSL-Portproxy.ps1`
+- [ ] **G1** — pin to stable `@playwright/mcp` so today's install still works in 3 months
+- [ ] **G3 (lite)** — at minimum: PID file truthfulness + `./mcp-status` that doesn't lie
+- [ ] **G4 (lite)** — detect Chrome disconnect, surface clear error, don't silently zombie
+- [ ] **First-run smoke test.** Fresh `git clone` on a clean Windows + WSL2 VM → run the installer → `./mcp-up` → at least one MCP tool call succeeds, without consulting any docs beyond the README quick-start.
+
+**Implicit deliverables.** README quick-start is genuinely one screen long; the installer prints a clear next-step when it finishes; failure modes surface human-readable errors, not stack traces.
+
+---
+
+## Roadmap: v1.0 OSS release (builds on install-and-forget)
+
+Ship gate: install-and-forget release **plus** every box below.
+
 - [ ] **G6** — log rotation in `start.sh` (10 MB threshold, keep 5)
 - [ ] **G13** — `SECURITY.md` + threat-model section
 - [ ] **G14** — `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, issue/PR templates
 - [ ] **G15** — minimal CI: shellcheck + PSScriptAnalyzer on PRs
-- [ ] **G5** — IP-drift auto-heal in `mcp-up` (the cheap version: re-run `setup-bridge` if stage-2 trigger fires after Chrome auto-launch)
 - [ ] **G8 (lite)** — second smoke test covering at minimum `browser_click` + `browser_navigate`
 - [ ] `CHANGELOG.md` exists with entries from `0.0.1` to `0.1.0`
 - [ ] `package.json` `"version"` bumped to `0.1.0`, git tag `v0.1.0` pushed
@@ -325,13 +358,11 @@ Ship gate: every box below checked.
 Ship gate: everything from v1.0 release **plus** every box below.
 
 - [ ] **G2** — bearer-token auth on the MCP endpoint, with `MCP_NO_AUTH` opt-out
-- [ ] **G3** — systemd user unit (or NSSM service for Windows-side) with `Restart=on-failure`
-- [ ] **G4** — Chrome-disconnect detection + auto-reattach + supervisor-driven restart fallback
+- [ ] **G3 (full)** — systemd user unit (or NSSM service for Windows-side) with `Restart=on-failure`
+- [ ] **G4 (full)** — Chrome-disconnect detection + auto-reattach + supervisor-driven restart fallback
 - [ ] **G7 (full)** — JSON structured logs + Prometheus `/metrics` endpoint + sample Grafana dashboard
 - [ ] **G8 (full)** — regression suite covering ≥ 80% of MCP tool surface; CI green on every push
 - [ ] **G9** — Chrome version range documented; pinning policy docs published; nightly CI against latest stable Chrome
-- [ ] **G10** — subnet-mask auto-detection in `Setup-WSL-Portproxy.ps1`
-- [ ] **G11** — one-line installer (GitHub Releases tarball + `install.sh`)
 - [ ] Per-client session isolation: either expose an isolation primitive in the MCP tool surface, or **explicitly document the contention model** in README (currently `--shared-browser-context` allows races)
 - [ ] **Canary tab.** Periodic (every 5 min) `browser_tabs(new)` → `https://example.com` → `browser_take_screenshot` → tab close. Emit success/failure as a metric for "stack alive AND Chrome responsive."
 - [ ] **Audit log.** Every `tools/call` recorded with `{ts, tool, args_hash, caller_token_id, duration_ms, error_code}`. Append-only, separate file from runtime log, retention ≥ 90 days.
@@ -342,7 +373,7 @@ Ship gate: everything from v1.0 release **plus** every box below.
 
 ## What ChromeMCP isn't going to be (and that's fine)
 
-These are **not** on either roadmap — listing them so scope creep gets called out early.
+These are **not** on any roadmap — listing them so scope creep gets called out early.
 
 - A multi-tenant SaaS product. The "your signed-in Chrome" model is fundamentally per-developer-machine.
 - A drop-in replacement for headless Playwright in CI. Different shape, different goals.
@@ -354,3 +385,4 @@ These are **not** on either roadmap — listing them so scope creep gets called 
 ## Notes / changelog
 
 - 2026-05-07 — initial roadmap drafted from the readiness audit. Status: 0/15 gaps closed.
+- 2026-05-18 — added mission statement; re-prioritized severities against the mission axis (G11 🟢→🔴, G5 🟠→🔴, G10 🟡→🟠, G2 🔴→🟠); inserted "Install-and-forget release" as the first roadmap milestone ahead of v1.0 OSS.
