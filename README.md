@@ -80,30 +80,70 @@ The individual scripts also still work for explicit, manual control:
 
 The MCP server listens at `http://localhost:8931/mcp`. Drop the snippet from [`mcp/client-config.json`](mcp/client-config.json) into your client's MCP config file:
 
+- **Codex** — use the local plugin in [`plugins/chromemcp-browser`](plugins/chromemcp-browser). Add this repo as a local marketplace in `~/.codex/config.toml`, enable `chromemcp-browser@chromemcp-local`, restart Codex, then start ChromeMCP with `./mcp-up`.
 - **Claude Code** — `~/.claude.json` (or a project-local `.mcp.json`)
 - **Cursor** — `~/.cursor/mcp.json`
 - **Continue** — your `config.json`'s `mcpServers` block
 
-Only the inner `mcpServers` entry needs to be merged into existing files. The `/mcp` path uses the modern Streamable HTTP transport; older clients can target `/sse` instead.
+Only the inner `mcpServers` entry needs to be merged into existing files. The `/mcp` path uses the modern Streamable HTTP transport; older clients can target `/sse` instead. See [`docs/CLIENTS.md`](docs/CLIENTS.md) for copy-paste client examples.
+
+### Codex local plugin
+
+This repository includes a Codex plugin wrapper so ChromeMCP can be used as a callable browser-tool replacement when the bundled Chrome connector is unavailable.
+
+The easiest install path from WSL is:
+
+```bash
+bash scripts/install-codex-plugin.sh
+```
+
+Then restart Codex.
+
+Add this marketplace and plugin entry to `~/.codex/config.toml`:
+
+```toml
+[marketplaces.chromemcp-local]
+source_type = "local"
+source = '\\?\UNC\wsl.localhost\Ubuntu\home\<user>\github\ChromeMCP'
+
+[plugins."chromemcp-browser@chromemcp-local"]
+enabled = true
+```
+
+Then restart Codex and run:
+
+```bash
+cd /home/<user>/github/ChromeMCP
+./mcp-up
+bash mcp/test.sh
+```
+
+The plugin exposes the MCP server as `chromemcp-playwright` through `plugins/chromemcp-browser/.mcp.json`.
+
+See [`docs/CODEX_PLUGIN.md`](docs/CODEX_PLUGIN.md) for redistribution notes and manual install details.
 
 ## Repository layout
 
 ```
 .
+├── .agents/plugins/marketplace.json  Local Codex marketplace entry
 ├── chrome              WSL wrapper → launcher/Launch-Chrome.ps1
 ├── chrome.cmd          Windows-side double-clickable wrapper
 ├── setup-bridge        WSL wrapper → Setup-Bridge.cmd (UAC elevation)
 ├── Setup-Bridge.cmd    Self-elevating wrapper for the portproxy script
+├── docs/               Client and Codex plugin setup notes
 ├── mcp-up / mcp-down   WSL wrappers → mcp/start.sh / mcp/stop.sh
 ├── launcher/
 │   ├── Launch-Chrome.ps1        Launches Chrome with CDP + project profile
 │   └── Setup-WSL-Portproxy.ps1  netsh portproxy + Defender rule (admin)
-└── mcp/
-    ├── package.json             @playwright/mcp pinned dependency
-    ├── start.sh / stop.sh       Long-running HTTP/SSE service
-    ├── client-config.json       Drop-in snippet for MCP clients
-    ├── test.sh                  Smoke test (initialize + browser_tabs + browser_snapshot)
-    └── demo-visible.sh          Visible-effect demo (opens tab, screenshots, closes)
+├── mcp/
+│   ├── package.json             @playwright/mcp pinned dependency
+│   ├── start.sh / stop.sh       Long-running HTTP/SSE service
+│   ├── client-config.json       Drop-in snippet for MCP clients
+│   ├── test.sh                  Smoke test (initialize + browser_tabs + browser_snapshot)
+│   └── demo-visible.sh          Visible-effect demo (opens tab, screenshots, closes)
+├── plugins/chromemcp-browser/   Codex plugin wrapper + MCP config
+└── scripts/install-codex-plugin.sh  Local Codex config installer
 ```
 
 Every script is idempotent. Re-running `./chrome` while Chrome is already up does nothing. Re-running `./mcp-up` while the server is healthy reports its endpoint and exits zero. Re-running `./setup-bridge` refreshes the portproxy and firewall rule cleanly.

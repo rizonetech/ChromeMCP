@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "chromemcp-playwright": {
+      "type": "http",
+      "url": "http://localhost:8931/mcp",
+      "note": "Local ChromeMCP Playwright MCP server. Start it with /home/<user>/github/ChromeMCP/mcp-up before use."
+    }
+  }
+}

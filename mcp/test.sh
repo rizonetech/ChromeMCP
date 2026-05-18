@@ -42,8 +42,22 @@ def post(payload, sid=None, expect_response=True):
             return json.loads(body), new_sid
         except Exception:
             sys.stderr.write(f"[server raw response] {body[:500]}\n")
-            raise SystemExit("Could not parse MCP response")
+        raise SystemExit("Could not parse MCP response")
     return json.loads(payloads[-1]), new_sid
+
+def text_content(resp):
+    content = resp.get("result", {}).get("content", [])
+    return next((c.get("text","") for c in content if c.get("type")=="text"), "")
+
+def assert_tool_ok(resp, label):
+    if "error" in resp:
+        raise SystemExit(f"FAIL: {label}: {resp['error']}")
+    result = resp.get("result", {})
+    text = text_content(resp)
+    if result.get("isError") or text.lstrip().startswith("### Error"):
+        sys.stderr.write(f"[{label} tool response]\n{text[:1000]}\n")
+        raise SystemExit(f"FAIL: {label}: MCP tool returned an error")
+    return text
 
 # 1. initialize
 print("1. initialize ...", end=" ", flush=True)
@@ -72,10 +86,7 @@ resp, _ = post({
     "jsonrpc": "2.0", "id": 2, "method": "tools/call",
     "params": {"name": "browser_tabs", "arguments": {"action": "list"}},
 }, sid=sid)
-if "error" in resp:
-    raise SystemExit(f"FAIL: {resp['error']}")
-content = resp["result"].get("content", [])
-text = next((c.get("text","") for c in content if c.get("type")=="text"), "")
+text = assert_tool_ok(resp, "browser_tabs")
 print("OK")
 print("   --- live tabs as seen by Playwright MCP via CDP ---")
 for line in text.strip().splitlines()[:15]:
@@ -88,10 +99,7 @@ resp, _ = post({
     "jsonrpc": "2.0", "id": 3, "method": "tools/call",
     "params": {"name": "browser_snapshot", "arguments": {}},
 }, sid=sid)
-if "error" in resp:
-    raise SystemExit(f"FAIL: {resp['error']}")
-content = resp["result"].get("content", [])
-text = next((c.get("text","") for c in content if c.get("type")=="text"), "")
+text = assert_tool_ok(resp, "browser_snapshot")
 lines = text.strip().splitlines()
 print(f"OK ({len(lines)} lines of accessibility tree)")
 print("   first 8 lines:")

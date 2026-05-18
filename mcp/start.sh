@@ -25,6 +25,37 @@ PID_FILE="$(pwd)/.playwright.pid"
 LOG_FILE="$(pwd)/logs/playwright-mcp.log"
 MCP_URL="http://${HOST}:${PORT}/mcp"
 
+find_windows_exe() {
+  local name="$1"
+  local found
+  found="$(command -v "$name" 2>/dev/null || true)"
+  if [ -n "$found" ]; then
+    printf '%s\n' "$found"
+    return 0
+  fi
+
+  case "$name" in
+    powershell.exe)
+      for candidate in \
+        /mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe \
+        /mnt/c/WINDOWS/System32/WindowsPowerShell/v1.0/powershell.exe
+      do
+        [ -x "$candidate" ] && printf '%s\n' "$candidate" && return 0
+      done
+      ;;
+    cmd.exe)
+      for candidate in \
+        /mnt/c/Windows/System32/cmd.exe \
+        /mnt/c/WINDOWS/System32/cmd.exe
+      do
+        [ -x "$candidate" ] && printf '%s\n' "$candidate" && return 0
+      done
+      ;;
+  esac
+
+  return 1
+}
+
 # --- Idempotency: if already running, just report and exit. ---------------
 if [ -f "$PID_FILE" ] && kill -0 "$(cat "$PID_FILE")" 2>/dev/null; then
   if curl -s --max-time 2 "$MCP_URL" -o /dev/null --head 2>/dev/null \
@@ -56,11 +87,12 @@ initial_probe_cdp() {
 # launcher. The launcher is idempotent (no-op if Chrome is already up), so
 # this is safe to call speculatively. Skip with MCP_NO_AUTO_CHROME=1.
 if ! initial_probe_cdp; then
-  if [ -z "${MCP_NO_AUTO_CHROME:-}" ] && command -v powershell.exe >/dev/null 2>&1; then
+  POWERSHELL_EXE="$(find_windows_exe powershell.exe || true)"
+  if [ -z "${MCP_NO_AUTO_CHROME:-}" ] && [ -n "$POWERSHELL_EXE" ]; then
     LAUNCHER_PS1="$(wslpath -w "${PROJECT_ROOT}/launcher/Launch-Chrome.ps1" 2>/dev/null || true)"
     if [ -n "$LAUNCHER_PS1" ]; then
       echo "Chrome CDP not reachable - auto-launching Chrome on Windows..."
-      powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$LAUNCHER_PS1" >/dev/null || true
+      "$POWERSHELL_EXE" -NoProfile -ExecutionPolicy Bypass -File "$LAUNCHER_PS1" >/dev/null || true
       # Allow a few seconds for the bridge to forward the freshly-started Chrome.
       for i in $(seq 1 15); do
         probe_cdp && break
@@ -75,14 +107,15 @@ fi
 # self-elevates with a UAC prompt on the Windows desktop. One-time per
 # machine. Skip with MCP_NO_AUTO_BRIDGE=1.
 if ! probe_cdp; then
-  if [ -z "${MCP_NO_AUTO_BRIDGE:-}" ] && command -v cmd.exe >/dev/null 2>&1; then
+  CMD_EXE="$(find_windows_exe cmd.exe || true)"
+  if [ -z "${MCP_NO_AUTO_BRIDGE:-}" ] && [ -n "$CMD_EXE" ]; then
     BRIDGE_CMD="$(wslpath -w "${PROJECT_ROOT}/Setup-Bridge.cmd" 2>/dev/null || true)"
     if [ -n "$BRIDGE_CMD" ]; then
       echo "Installing the WSL<->Windows bridge (one-time per machine)..."
       echo "  Approve the UAC prompt on your Windows desktop to continue."
       # The .cmd self-elevates via Start-Process -Verb RunAs and exits fast;
       # the elevated copy keeps running in the background.
-      cmd.exe /c "$BRIDGE_CMD" </dev/null >/dev/null 2>&1 || true
+      "$CMD_EXE" /c "$BRIDGE_CMD" </dev/null >/dev/null 2>&1 || true
       echo "  Waiting up to 90s for the bridge to come live..."
       for i in $(seq 1 180); do
         probe_cdp && break
