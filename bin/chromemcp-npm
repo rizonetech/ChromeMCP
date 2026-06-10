@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+# ChromeMCP npm bootstrap shim.
+# If ChromeMCP is already installed at ~/ChromeMCP, delegate to it.
+# Otherwise, on "install" (or no args), run the bundled installer.
+
+set -euo pipefail
+
+INSTALLED="$HOME/ChromeMCP/chromemcp"
+
+if [[ -x "$INSTALLED" ]]; then
+  exec "$INSTALLED" "$@"
+fi
+
+# Not installed. Handle the install path.
+if [[ $# -eq 0 || "$1" == "install" ]]; then
+  SCRIPT_DIR="$(dirname "$(readlink -f "$0")")"
+  INSTALLER="$SCRIPT_DIR/../scripts/install.sh"
+
+  echo "ChromeMCP is not installed at $HOME/ChromeMCP."
+  echo "Running installer: $INSTALLER"
+  echo ""
+
+  # Shift past "install" so remaining args (e.g. --prefix, --bin-dir) pass through.
+  if [[ $# -gt 0 && "$1" == "install" ]]; then
+    shift
+  fi
+
+  exec bash "$INSTALLER" "$@"
+fi
+
+echo "ChromeMCP is not installed. Run: npx chromemcp install" >&2
+exit 1

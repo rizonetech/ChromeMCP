@@ -1,0 +1,37 @@
+{
+  "name": "chromemcp",
+  "version": "0.1.0",
+  "description": "Bootstrap installer for ChromeMCP — drives your real signed-in Chrome on Windows from WSL2 agents via MCP.",
+  "keywords": [
+    "mcp",
+    "playwright",
+    "chrome",
+    "browser-automation",
+    "wsl2",
+    "claude"
+  ],
+  "homepage": "https://github.com/rizonetech/ChromeMCP#readme",
+  "bugs": {
+    "url": "https://github.com/rizonetech/ChromeMCP/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/rizonetech/ChromeMCP.git"
+  },
+  "license": "MIT",
+  "bin": {
+    "chromemcp": "./bin/chromemcp-npm"
+  },
+  "files": [
+    "bin/chromemcp-npm",
+    "scripts/install.sh",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=18.18"
+  },
+  "os": [
+    "linux"
+  ]
+}

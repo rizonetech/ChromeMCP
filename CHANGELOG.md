@@ -6,6 +6,20 @@ All notable changes to ChromeMCP are recorded here. Format loosely follows
 
 ## [Unreleased]
 
+### Added
+
+- **npm bootstrap package** (`chromemcp` on npm). `npx chromemcp install` runs
+  the bundled `scripts/install.sh` to install ChromeMCP to `~/ChromeMCP`.
+  `npm i -g chromemcp` then delegates all subsequent `chromemcp` invocations
+  to the real CLI at `~/ChromeMCP/chromemcp`. The npm package is a thin
+  bootstrap shim — the runtime stays at a stable path independent of npm/nvm
+  version churn. Entry point: `bin/chromemcp-npm`.
+- **Restructured README** — deep content moved to `docs/TROUBLESHOOTING.md`
+  (reconnection, bridge self-healing, systemd supervision) and
+  `docs/CONFIGURATION.md` (full env-var reference, log rotation details).
+  README is now ~120 lines covering what/why, architecture, requirements,
+  install, quick start, client connection, CLI reference, and links.
+
 ### Verified Chrome versions
 
 - **Last verified-working Chrome**: `148.0.7778.98` (Windows stable, 2026-05-19).
