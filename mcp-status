@@ -49,6 +49,21 @@ if cdp:
 PY
 }
 
+_installed_ver=""
+if [ -r "$REPO_ROOT/VERSION" ]; then
+  _installed_ver="$(tr -d '\n\r ' < "$REPO_ROOT/VERSION")"
+fi
+_repo_ver=""
+_repo_ver_file="${CHROMEMCP_REPO:-$HOME/github/ChromeMCP}/VERSION"
+if [ -r "$_repo_ver_file" ]; then
+  _repo_ver="$(tr -d '\n\r ' < "$_repo_ver_file")"
+fi
+_install_line="Install : ${_installed_ver:-(unknown)}"
+if [ -n "$_repo_ver" ] && [ "$_repo_ver" != "$_installed_ver" ]; then
+  _install_line="$_install_line (repo has $_repo_ver — run 'chromemcp update')"
+fi
+echo "$_install_line"
+
 if is_supervised; then
   echo "Mode: supervised (systemd --user)"
   echo ""

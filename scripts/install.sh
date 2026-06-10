@@ -102,7 +102,8 @@ else
       echo "ERROR: could not query GitHub API for latest release." >&2
       echo "  Either the network is down, the repo $REPO_OWNER/$REPO_NAME has no published release yet," >&2
       echo "  or you've hit the unauthenticated GitHub API rate limit (60/hr per IP)." >&2
-      echo "  Workaround: clone the repo and run 'bash scripts/install.sh --from-source'." >&2
+      echo "  Workaround: clone the repo and run 'bash scripts/install.sh --from-source'," >&2
+      echo "  or if you have a source checkout: 'chromemcp update'." >&2
       exit 1
     fi
     WANT_TAG=$(sed -n 's/.*"tag_name":[[:space:]]*"\([^"]*\)".*/\1/p' "$LATEST_JSON" | head -1)
@@ -139,6 +140,15 @@ else
     exit 1
   fi
   SOURCE_TYPE="release"
+fi
+
+# --- Stop the running service before touching files -----------------------
+SERVICE_WAS_ACTIVE=0
+if systemctl --user is-active --quiet chromemcp.service 2>/dev/null; then
+  SERVICE_WAS_ACTIVE=1
+  echo "Stopping chromemcp.service before install..."
+  systemctl --user stop chromemcp.service
+  echo "Service stopped."
 fi
 
 # --- Install path: stage to $PREFIX --------------------------------------
@@ -205,6 +215,22 @@ case ":$PATH:" in
 esac
 
 INSTALLED_VERSION="$( "$PREFIX/chromemcp" version 2>/dev/null || echo unknown )"
+
+# --- Restart the service if it was running before -------------------------
+if [ "$SERVICE_WAS_ACTIVE" = "1" ]; then
+  echo "Restarting chromemcp.service..."
+  systemctl --user start chromemcp.service
+  echo "Verifying service health..."
+  if curl --fail --silent --max-time 5 --retry 30 --retry-delay 1 --retry-connrefused \
+       -o /dev/null http://127.0.0.1:8931/healthz; then
+    echo "Service restarted and healthy."
+  else
+    echo "ERROR: Service started but health check failed after 30 attempts." >&2
+    echo "  Check logs: journalctl --user -u chromemcp -n 50" >&2
+    exit 1
+  fi
+fi
+
 echo ""
 echo "ChromeMCP $INSTALLED_VERSION installed."
 echo ""

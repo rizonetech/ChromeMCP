@@ -58,6 +58,9 @@ Verification:
 
 Maintenance:
   upgrade                        check for + install the latest release
+  update                         git pull the source repo + reinstall from source
+                                 (use when running from a cloned repo instead of
+                                 releases)
   uninstall                      remove the chromemcp install
   version                        print the installed version
   help                           this help
@@ -119,6 +122,17 @@ case "$cmd" in
       exit 1
     fi
     exec bash "$DIR/scripts/install.sh" --upgrade "$@"
+    ;;
+  update|pull)
+    REPO_DIR="${CHROMEMCP_REPO:-$HOME/github/ChromeMCP}"
+    if [ ! -d "$REPO_DIR/.git" ]; then
+      echo "ERROR: source repo not found at $REPO_DIR." >&2
+      echo "  Clone it first:  git clone https://github.com/rizonetech/ChromeMCP \"$REPO_DIR\"" >&2
+      echo "  (or set CHROMEMCP_REPO to your checkout)" >&2
+      exit 1
+    fi
+    git -C "$REPO_DIR" pull --ff-only
+    exec bash "$REPO_DIR/scripts/install.sh" --from-source
     ;;
   uninstall)
     if [ ! -x "$DIR/scripts/install.sh" ]; then
