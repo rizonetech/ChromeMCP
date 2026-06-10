@@ -28,5 +28,5 @@ if [[ $# -eq 0 || "$1" == "install" ]]; then
   exec bash "$INSTALLER" "$@"
 fi
 
-echo "ChromeMCP is not installed. Run: npx chromemcp install" >&2
+echo "ChromeMCP is not installed. Run: npx @rizonetech/chromemcp install" >&2
 exit 1

@@ -1,5 +1,7 @@
 # ChromeMCP
 
+[![npm](https://img.shields.io/npm/v/%40rizonetech%2Fchromemcp)](https://www.npmjs.com/package/@rizonetech/chromemcp) [![license](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+
 A small, opinionated stack that lets agents in **WSL2** drive your **real, signed-in Chrome on Windows** through the Model Context Protocol (MCP). You launch Chrome once with CDP enabled against a project-local profile, expose that debug port to WSL through a scoped portproxy + firewall rule, and run [Playwright MCP](https://github.com/microsoft/playwright-mcp) as a long-running HTTP/SSE service that any MCP client (Claude Code, Cursor, Continue, etc.) can attach to. Every client shares the same browser session — same tabs, same cookies, same logins. Multi-client by design: run Claude Code and Cursor simultaneously, both driving the same Chrome window.
 
 ## Architecture
@@ -38,7 +40,7 @@ The Chrome profile lives in `%LOCALAPPDATA%\ChromeMCP\Profile`, not in this repo
 curl -fsSL https://raw.githubusercontent.com/rizonetech/ChromeMCP/main/scripts/install.sh | bash
 
 # Via npm / npx (no clone required):
-npx chromemcp install
+npx @rizonetech/chromemcp install
 
 # From source:
 git clone https://github.com/rizonetech/ChromeMCP.git ~/ChromeMCP

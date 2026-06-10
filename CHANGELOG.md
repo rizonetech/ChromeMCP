@@ -8,7 +8,7 @@ All notable changes to ChromeMCP are recorded here. Format loosely follows
 
 ### Added
 
-- **npm bootstrap package** (`chromemcp` on npm). `npx chromemcp install` runs
+- **npm bootstrap package** (`chromemcp` on npm). `npx @rizonetech/chromemcp install` runs
   the bundled `scripts/install.sh` to install ChromeMCP to `~/ChromeMCP`.
   `npm i -g chromemcp` then delegates all subsequent `chromemcp` invocations
   to the real CLI at `~/ChromeMCP/chromemcp`. The npm package is a thin
