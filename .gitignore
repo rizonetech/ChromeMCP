@@ -8,6 +8,10 @@ mcp/.*.pid
 mcp/.playwright-mcp/
 mcp/demo-output/
 
+# Python
+__pycache__/
+mcp/*.png
+
 # OS junk
 Thumbs.db
 .DS_Store

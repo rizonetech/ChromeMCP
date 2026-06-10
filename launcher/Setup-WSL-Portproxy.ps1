@@ -21,16 +21,28 @@
 .PARAMETER Remove
     Remove the portproxy entry and firewall rule, then exit.
 
+.PARAMETER Refresh
+    Re-detect the current WSL gateway IP, drop any stale portproxy entries
+    on $Port (whatever listenaddress they have), and rewrite the firewall
+    rule to match the new subnet. Equivalent to the install path but logs
+    drift explicitly. Use when WSL2's gateway IP has changed (e.g. after a
+    Windows reboot or 'wsl --shutdown').
+
 .NOTES
     Requires Administrator. The .cmd wrapper handles UAC elevation.
 #>
 [CmdletBinding()]
 param(
     [int]$Port = 9222,
-    [switch]$Remove
+    [switch]$Remove,
+    [switch]$Refresh
 )
 
 $ErrorActionPreference = 'Stop'
+
+# Network helpers (Get-IPv4Subnet). Dot-source so the function is in scope
+# below. This file is also dot-sourced standalone by Test-Lib-Net.ps1.
+. "$PSScriptRoot/Lib-Net.ps1"
 
 # --- Admin check ---------------------------------------------------------
 $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole(
@@ -46,13 +58,43 @@ function Get-WslAdapterIP {
         $_.InterfaceAlias -like 'vEthernet (WSL*'
     } | Select-Object -First 1
     if (-not $adapter) { return $null }
-    $ip = (Get-NetIPAddress -InterfaceIndex $adapter.ifIndex -AddressFamily IPv4 -ErrorAction SilentlyContinue).IPAddress
-    if (-not $ip) { return $null }
+
+    $netip = Get-NetIPAddress -InterfaceIndex $adapter.ifIndex `
+        -AddressFamily IPv4 -ErrorAction SilentlyContinue |
+        Select-Object -First 1
+    if (-not $netip -or -not $netip.IPAddress) { return $null }
+
+    $ip = [string]$netip.IPAddress
+    $prefix = [int]$netip.PrefixLength
+
+    # Sanity-check the prefix Windows handed us. The WSL2 vEthernet
+    # adapter's PrefixLength has been observed as 20 historically, but
+    # nothing guarantees that. /1..7 is implausible for a private
+    # adapter, /0 means "everything" (firewall would be useless), and
+    # /32 means "just this host" (firewall would be too strict). Fall
+    # back to /20 with a loud warning in those cases — historical
+    # behaviour preserved.
+    if ($prefix -lt 8 -or $prefix -gt 30) {
+        Write-Warning ("WSL adapter PrefixLength {0} is implausible; " +
+            "falling back to /20 for the firewall RemoteAddress.") -f $prefix
+        $prefix = 20
+    }
+
+    try {
+        $subnet = Get-IPv4Subnet -IPAddress $ip -PrefixLength $prefix
+    } catch {
+        Write-Warning ("Get-IPv4Subnet failed ({0}); falling back to " +
+            "regex-derived '.0/20' for IP {1}.") -f $_.Exception.Message, $ip
+        $subnet = ($ip -replace '\.\d+$', '.0') + '/20'
+        $prefix = 20
+    }
+
     [pscustomobject]@{
-        Name      = $adapter.Name
-        Index     = $adapter.ifIndex
-        IPAddress = $ip
-        Subnet    = ($ip -replace '\.\d+$', '.0') + '/20'  # WSL2 default /20 mask
+        Name          = $adapter.Name
+        Index         = $adapter.ifIndex
+        IPAddress     = $ip
+        PrefixLength  = $prefix
+        Subnet        = $subnet
     }
 }
 
@@ -68,7 +110,7 @@ Write-Host ""
 Write-Host "ChromeMCP WSL bridge" -ForegroundColor Cyan
 Write-Host "  WSL adapter   : $($wsl.Name)"
 Write-Host "  Adapter IP    : $($wsl.IPAddress)"
-Write-Host "  WSL subnet    : $($wsl.Subnet)"
+Write-Host "  WSL subnet    : $($wsl.Subnet)  (auto-detected prefix /$($wsl.PrefixLength))"
 Write-Host "  CDP port      : $Port"
 Write-Host "  Firewall rule : $ruleName"
 Write-Host ""
@@ -89,8 +131,30 @@ if ($Remove) {
 }
 
 # --- Install path: portproxy ---------------------------------------------
-# Always remove first so we don't get duplicate entries on re-run.
-& netsh interface portproxy delete v4tov4 listenaddress=$($wsl.IPAddress) listenport=$Port 2>&1 | Out-Null
+# Idempotency: enumerate every existing v4tov4 portproxy entry on $Port and
+# delete each. Without this, a drifted gateway IP leaves the OLD entry in
+# place forever — netsh keeps it because the delete on line below only
+# targets $wsl.IPAddress, not whatever IP was previously bridged.
+$existingProxies = & netsh interface portproxy show v4tov4 2>&1 |
+    Select-String -Pattern "^\s*(\d+\.\d+\.\d+\.\d+)\s+$Port\s" |
+    ForEach-Object { $_.Matches[0].Groups[1].Value } |
+    Sort-Object -Unique
+
+if ($existingProxies.Count -gt 0) {
+    $drift = $existingProxies | Where-Object { $_ -ne $wsl.IPAddress }
+    if ($drift) {
+        Write-Host "Drift detected: stale portproxy entries on port $Port for IP(s): $($drift -join ', ')" -ForegroundColor Yellow
+    }
+    foreach ($listenIp in $existingProxies) {
+        & netsh interface portproxy delete v4tov4 listenaddress=$listenIp listenport=$Port 2>&1 | Out-Null
+    }
+}
+# Also delete a wildcard 0.0.0.0 entry if one snuck in from an earlier version of this script.
+& netsh interface portproxy delete v4tov4 listenaddress=0.0.0.0 listenport=$Port 2>&1 | Out-Null
+
+if ($Refresh) {
+    Write-Host "Refreshing bridge to current WSL gateway IP $($wsl.IPAddress)." -ForegroundColor Cyan
+}
 
 Write-Host "Adding portproxy: $($wsl.IPAddress):$Port -> 127.0.0.1:$Port"
 $proxyOut = & netsh interface portproxy add v4tov4 `
