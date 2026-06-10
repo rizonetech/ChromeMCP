@@ -9,8 +9,9 @@ http://localhost:8931/mcp
 Start and verify it before configuring clients:
 
 ```bash
-cd /path/to/ChromeMCP
+cd ~/ChromeMCP
 ./mcp-up
+./mcp-status
 bash mcp/test.sh
 ```
 
@@ -60,3 +61,18 @@ Merge the same `mcpServers` entry into:
 
 Use the local Codex plugin. See `docs/CODEX_PLUGIN.md`.
 
+## Python Scripts
+
+Use the supported standard-library Python helper instead of copying test
+harness code:
+
+```python
+from mcp.client import McpClient
+
+client = McpClient()
+client.initialize()
+print(client.tool_text(client.call_tool("browser_tabs", {"action": "list"})))
+```
+
+See `docs/PYTHON_CLIENT.md` for tab-session helpers, structured results,
+CLI usage, auth lookup, and common failure handling.

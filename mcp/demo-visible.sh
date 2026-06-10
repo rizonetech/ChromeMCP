@@ -9,13 +9,29 @@ URL="${MCP_URL:-http://localhost:8931/mcp}"
 OUT_DIR="$(pwd)/demo-output"
 mkdir -p "$OUT_DIR"
 
-python3 - "$URL" "$OUT_DIR" <<'PYEOF'
+TOKEN_PATH="${MCP_TOKEN_PATH:-${XDG_CONFIG_HOME:-$HOME/.config}/chromemcp/token}"
+TOKEN=""
+if [ "${MCP_NO_AUTH:-}" != "1" ]; then
+  if [ -n "${MCP_AUTH_TOKEN:-}" ]; then
+    TOKEN="$MCP_AUTH_TOKEN"
+  elif [ -r "$TOKEN_PATH" ]; then
+    TOKEN="$(tr -d '\n\r ' < "$TOKEN_PATH")"
+  else
+    echo "ERROR: no auth token at $TOKEN_PATH. Run ./mcp-up or ./mcp-token first." >&2
+    exit 2
+  fi
+fi
+
+python3 - "$URL" "$OUT_DIR" "$TOKEN" <<'PYEOF'
 import json, sys, urllib.request, urllib.error, base64, time, os
 
 MCP_URL  = sys.argv[1]
 OUT_DIR  = sys.argv[2]
+TOKEN    = sys.argv[3]
 HEADERS_BASE = {"Content-Type": "application/json",
                 "Accept":       "application/json, text/event-stream"}
+if TOKEN:
+    HEADERS_BASE["Authorization"] = "Bearer " + TOKEN
 
 def post(payload, sid=None, expect=True):
     h = dict(HEADERS_BASE)

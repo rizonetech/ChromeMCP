@@ -4,6 +4,17 @@ set -euo pipefail
 
 cd "$(dirname "$(readlink -f "$0")")"
 PID_FILE="$(pwd)/.playwright.pid"
+LOGROTATE_PID_FILE="$(pwd)/.logrotate.pid"
+
+# Kill the log rotator sidecar first (if any). It's an independent session,
+# so we have to clean it up explicitly — the proxy doesn't own it.
+if [ -f "$LOGROTATE_PID_FILE" ]; then
+  RPID="$(cat "$LOGROTATE_PID_FILE" 2>/dev/null || echo)"
+  if [ -n "$RPID" ] && kill -0 "$RPID" 2>/dev/null; then
+    kill "$RPID" 2>/dev/null || true
+  fi
+  rm -f "$LOGROTATE_PID_FILE"
+fi
 
 if [ ! -f "$PID_FILE" ]; then
   echo "No PID file. Server is not tracked as running."
