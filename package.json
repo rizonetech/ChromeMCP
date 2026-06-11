@@ -1,6 +1,6 @@
 {
   "name": "@rizonetech/chromemcp",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Bootstrap installer for ChromeMCP — drives your real signed-in Chrome on Windows from WSL2 agents via MCP.",
   "keywords": [
     "mcp",

@@ -4,7 +4,7 @@ All notable changes to ChromeMCP are recorded here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.2.0] — 2026-06-11
 
 ### Added
 
@@ -41,6 +41,11 @@ All notable changes to ChromeMCP are recorded here. Format loosely follows
 - **Lane test suite** at `tests/codex-lane.test.sh` covering acquisition,
   exhaustion, stale reclaim, host/liveness guards, config output, and wrapper
   argument validation.
+- **Restructured README** — deep content moved to `docs/TROUBLESHOOTING.md`
+  (reconnection, bridge self-healing, systemd supervision) and
+  `docs/CONFIGURATION.md` (full env-var reference, log rotation details).
+  README is now ~120 lines covering what/why, architecture, requirements,
+  install, quick start, client connection, CLI reference, and links.
 
 ### Fixed
 
@@ -50,11 +55,6 @@ All notable changes to ChromeMCP are recorded here. Format loosely follows
 - The `mcp-up-codex`/`mcp-down-codex`/`mcp-status-codex`/`chrome-codex`/
   `setup-bridge-codex` wrappers reject a non-numeric lane argument with exit
   64 instead of silently falling back to lane 1.
-- **Restructured README** — deep content moved to `docs/TROUBLESHOOTING.md`
-  (reconnection, bridge self-healing, systemd supervision) and
-  `docs/CONFIGURATION.md` (full env-var reference, log rotation details).
-  README is now ~120 lines covering what/why, architecture, requirements,
-  install, quick start, client connection, CLI reference, and links.
 
 ### Verified Chrome versions
 
