@@ -184,7 +184,7 @@ fi
 for f in chromemcp mcp-up mcp-down mcp-status mcp-enable mcp-disable \
          mcp-logs mcp-token bridge-check chrome setup-bridge \
          chrome-codex setup-bridge-codex mcp-up-codex mcp-down-codex \
-         mcp-status-codex codex-lane; do
+         mcp-status-codex codex-lane lane; do
   [ -f "$PREFIX/$f" ] && chmod +x "$PREFIX/$f"
 done
 [ -f "$PREFIX/scripts/install.sh" ] && chmod +x "$PREFIX/scripts/install.sh"

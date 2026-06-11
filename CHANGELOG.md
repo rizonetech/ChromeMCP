@@ -4,6 +4,33 @@ All notable changes to ChromeMCP are recorded here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] — 2026-06-11
+
+### Added
+
+- **Client-generalized lanes** via `chromemcp lane
+  acquire|release|env|config|status|up|down [--client codex|claude]`
+  (`lib/lanes.sh`). Each client owns a port band — codex lanes start at MCP
+  `8941` / CDP `9232`, claude lanes at MCP `8741` / upstream `8742` / CDP
+  `9432`, both stepping `+10` per lane — so concurrent Codex and Claude
+  overnight runs cannot collide
+  with each other or with the default stack on `8931/8932/9222`. Lock state
+  lives per client under `~/.local/state/chromemcp/<client>-lanes/`.
+- **`lane up|down`** runs the laned stack directly (`lane up --client claude
+  2`) — `mcp/start.sh` auto-launches Chrome on the lane's profile/CDP port
+  and self-heals the bridge on the lane's port.
+- New generic env overrides: `CHROMEMCP_LANE`, `CHROMEMCP_MAX_LANE`,
+  `CHROMEMCP_LANE_STATE_ROOT`.
+
+### Changed
+
+- `codex-lane` and `lib/codex-lanes.sh` are now thin back-compat shims over
+  the generic implementation. All `codex-lane` subcommands, the
+  `CODEX_CHROMEMCP_LANE`/`CODEX_CHROMEMCP_MAX_LANE`/
+  `CODEX_CHROMEMCP_LANE_STATE_DIR` overrides, ports, profiles, token paths,
+  and the lock-state directory are unchanged. `codex-lane env --format json`
+  output gains a `client` field (additive).
+
 ## [0.2.0] — 2026-06-11
 
 ### Added

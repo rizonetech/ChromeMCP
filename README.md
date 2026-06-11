@@ -95,6 +95,24 @@ upstream `8952`, CDP `9242`, token `~/.config/chromemcp-codex-2/token`, and
 profile `%LOCALAPPDATA%\ChromeMCP-Codex-2\Profile`; higher lanes follow the
 same `+10` port pattern.
 
+## Lanes for any client
+
+`codex-lane` is an alias for the client-generalized `lane` command. Each
+client gets its own port band, so concurrent Codex and Claude overnight runs
+can never collide with each other or with the default stack:
+
+```bash
+eval "$(chromemcp lane acquire --client claude --format shell --owner "overnight-$$")"
+chromemcp lane up --client claude "$CHROMEMCP_LANE"     # starts MCP, Chrome, bridge
+chromemcp lane config --client claude "$CHROMEMCP_LANE" # client config JSON
+chromemcp lane release --client claude "$CHROMEMCP_LANE"
+```
+
+Claude lanes start at MCP `8741` / upstream `8742` / CDP `9432` (lane 1) and
+step `+10` per lane, with profile `%LOCALAPPDATA%\ChromeMCP-Claude[-N]\Profile`
+and token `~/.config/chromemcp-claude[-N]/token`. Crashed runs are reclaimed
+automatically: the next `acquire` reuses a lane whose owner process is gone.
+
 ## Connect your MCP client
 
 The server listens at `http://localhost:8931/mcp`. Get the token:
