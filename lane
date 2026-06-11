@@ -1,0 +1,256 @@
+#!/usr/bin/env bash
+# Acquire, describe, and run client-isolated ChromeMCP lanes.
+set -euo pipefail
+
+SELF="$(readlink -f "$0")"
+ROOT="$(dirname "$SELF")"
+# shellcheck source=lib/lanes.sh
+. "$ROOT/lib/lanes.sh"
+
+usage() {
+  cat <<'HELP'
+Usage:
+  chromemcp lane acquire [--client C] [--lane N] [--max N] [--format shell|json|plain] [--owner TEXT]
+  chromemcp lane release [--client C] N
+  chromemcp lane env     [--client C] [N] [--format shell|json|plain]
+  chromemcp lane config  [--client C] [N]
+  chromemcp lane status  [--client C]
+  chromemcp lane up      [--client C] [N] [start.sh args...]
+  chromemcp lane down    [--client C] [N]
+
+Clients and port bands (lane N = base + N*10):
+  codex  (default)  MCP 8931, upstream 8932, CDP 9222 -> lane 1 = 8941/8942/9232
+  claude            MCP 8731, upstream 8732, CDP 9422 -> lane 1 = 8741/8742/9432
+HELP
+}
+
+CLIENT="codex"
+
+# Pull --client out of the argument list; everything else is forwarded to the
+# subcommand handlers untouched.
+parse_client() {
+  REST=()
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --client) CLIENT="${2:?missing client}"; shift 2 ;;
+      --client=*) CLIENT="${1#--client=}"; shift ;;
+      *) REST+=("$1"); shift ;;
+    esac
+  done
+  lane_client_validate "$CLIENT" || exit 64
+  STATE_DIR="$(lane_state_dir "$CLIENT")"
+}
+
+print_lane() {
+  local lane="$1"
+  local format="${2:-shell}"
+  case "$format" in
+    shell) lane_print_shell "$CLIENT" "$lane" ;;
+    json) lane_print_json "$CLIENT" "$lane" ;;
+    plain)
+      printf 'lane=%s mcp=http://127.0.0.1:%s/mcp cdp=%s profile=%s token=%s\n' \
+        "$lane" "$(lane_mcp_port "$CLIENT" "$lane")" "$(lane_cdp_port "$CLIENT" "$lane")" \
+        "$(lane_profile_name "$CLIENT" "$lane")" "$(lane_token_path "$CLIENT" "$lane")"
+      ;;
+    *) echo "ERROR: unknown format: $format" >&2; exit 64 ;;
+  esac
+}
+
+lock_dir_for_lane() {
+  printf '%s/lane-%s.lock\n' "$STATE_DIR" "$1"
+}
+
+# A lock is stale when its meta records a PID on THIS host that is no longer
+# running. Locks without meta (mid-acquire race) or from other hosts are
+# never reclaimed.
+lock_is_stale() {
+  local dir="$1" pid host
+  [ -f "$dir/meta" ] || return 1
+  pid="$(sed -n 's/^pid=//p' "$dir/meta" | head -n1)"
+  host="$(sed -n 's/^host=//p' "$dir/meta" | head -n1)"
+  [ "$host" = "$(hostname)" ] || return 1
+  [[ "$pid" =~ ^[0-9]+$ ]] || return 1
+  ! kill -0 "$pid" 2>/dev/null
+}
+
+grant_lane() {
+  local lane="$1" owner="$2" dir="$3"
+  {
+    printf 'lane=%s\n' "$lane"
+    printf 'client=%s\n' "$CLIENT"
+    printf 'owner=%s\n' "$owner"
+    printf 'pid=%s\n' "$$"
+    date -u '+created_at=%Y-%m-%dT%H:%M:%SZ'
+    hostname | sed 's/^/host=/'
+  } > "$dir/meta"
+}
+
+# Default search range when no --max is given: 4 lanes, unless the client's
+# max-lane env override says otherwise.
+default_search_max() {
+  if [ "$CLIENT" = "codex" ] && [ -n "${CODEX_CHROMEMCP_MAX_LANE:-}" ]; then
+    printf '%s\n' "$CODEX_CHROMEMCP_MAX_LANE"
+  elif [ -n "${CHROMEMCP_MAX_LANE:-}" ]; then
+    printf '%s\n' "$CHROMEMCP_MAX_LANE"
+  else
+    printf '4\n'
+  fi
+}
+
+cmd_acquire() {
+  local requested="" max="" format="shell" owner="${USER:-$CLIENT}:$$"
+  max="$(default_search_max)"
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --lane) requested="${2:?missing lane}"; shift 2 ;;
+      --lane=*) requested="${1#--lane=}"; shift ;;
+      --max) max="${2:?missing max}"; shift 2 ;;
+      --max=*) max="${1#--max=}"; shift ;;
+      --format) format="${2:?missing format}"; shift 2 ;;
+      --format=*) format="${1#--format=}"; shift ;;
+      --owner) owner="${2:?missing owner}"; shift 2 ;;
+      --owner=*) owner="${1#--owner=}"; shift ;;
+      --help|-h) usage; exit 0 ;;
+      *) echo "ERROR: unknown acquire argument: $1" >&2; exit 64 ;;
+    esac
+  done
+
+  if ! [[ "$max" =~ ^[1-9][0-9]*$ ]]; then
+    echo "ERROR: --max must be a positive integer, got: $max" >&2
+    exit 64
+  fi
+  # --max raises the validation ceiling for this invocation so the whole
+  # requested range is searchable (ports scale with the lane number).
+  if [ "$max" -gt "$(lane_max "$CLIENT")" ]; then
+    export CHROMEMCP_MAX_LANE="$max"
+    if [ "$CLIENT" = "codex" ]; then
+      export CODEX_CHROMEMCP_MAX_LANE="$max"
+    fi
+  fi
+
+  mkdir -p "$STATE_DIR"
+  local lane start end
+  if [ -n "$requested" ]; then
+    lane_validate "$CLIENT" "$requested"
+    start="$requested"; end="$requested"
+  else
+    start=1; end="$max"
+  fi
+
+  for lane in $(seq "$start" "$end"); do
+    local dir
+    dir="$(lock_dir_for_lane "$lane")"
+    if [ -d "$dir" ] && lock_is_stale "$dir"; then
+      echo "Reclaiming stale $CLIENT lane $lane (owner process is gone)." >&2
+      rm -rf "$dir"
+    fi
+    if mkdir "$dir" 2>/dev/null; then
+      grant_lane "$lane" "$owner" "$dir"
+      print_lane "$lane" "$format"
+      exit 0
+    fi
+  done
+
+  echo "ERROR: no free $CLIENT ChromeMCP lane in range ${start}-${end}" >&2
+  exit 75
+}
+
+cmd_release() {
+  local lane="${1:-}"
+  [ -n "$lane" ] || { echo "ERROR: release requires a lane number" >&2; exit 64; }
+  lane_validate "$CLIENT" "$lane"
+  local dir
+  dir="$(lock_dir_for_lane "$lane")"
+  case "$dir" in
+    "$STATE_DIR"/lane-*.lock) ;;
+    *) echo "ERROR: refusing to release unexpected lock path: $dir" >&2; exit 1 ;;
+  esac
+  if [ ! -d "$dir" ]; then
+    echo "$CLIENT lane $lane is not locked."
+    exit 0
+  fi
+  rm -f "$dir/meta"
+  rmdir "$dir"
+  echo "Released $CLIENT lane $lane."
+}
+
+parse_lane_and_format() {
+  PARSED_LANE=""
+  PARSED_FORMAT="shell"
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --format) PARSED_FORMAT="${2:?missing format}"; shift 2 ;;
+      --format=*) PARSED_FORMAT="${1#--format=}"; shift ;;
+      --help|-h) usage; exit 0 ;;
+      *)
+        if [ -z "$PARSED_LANE" ]; then PARSED_LANE="$1"; shift; else echo "ERROR: unexpected argument: $1" >&2; exit 64; fi
+        ;;
+    esac
+  done
+  PARSED_LANE="${PARSED_LANE:-$(lane_default "$CLIENT")}"
+}
+
+cmd_env() {
+  parse_lane_and_format "$@"
+  print_lane "$PARSED_LANE" "$PARSED_FORMAT"
+}
+
+cmd_config() {
+  local lane="${1:-$(lane_default "$CLIENT")}"
+  lane_print_config "$CLIENT" "$lane"
+}
+
+cmd_status() {
+  mkdir -p "$STATE_DIR"
+  echo "$CLIENT ChromeMCP lanes:"
+  for lane in $(seq 1 "$(default_search_max)"); do
+    local dir lock="free"
+    dir="$(lock_dir_for_lane "$lane")"
+    if [ -d "$dir" ]; then
+      if lock_is_stale "$dir"; then
+        lock="stale (owner process gone; next acquire reclaims it)"
+      else
+        lock="locked"
+      fi
+    fi
+    printf '  lane %s: %s, MCP %s, CDP %s, profile %s\n' \
+      "$lane" "$lock" "$(lane_mcp_port "$CLIENT" "$lane")" "$(lane_cdp_port "$CLIENT" "$lane")" \
+      "$(lane_profile_name "$CLIENT" "$lane")"
+    if [ -f "$dir/meta" ]; then
+      sed 's/^/    /' "$dir/meta"
+    fi
+  done
+}
+
+cmd_up() {
+  local lane
+  lane="$(lane_from_arg "${1-}" "$CLIENT")" || exit $?
+  if [[ "${1-}" =~ ^[1-9][0-9]*$ ]]; then shift || true; fi
+  lane_apply_runtime "$CLIENT" "$lane" "$ROOT"
+  exec bash "$ROOT/mcp/start.sh" "$@"
+}
+
+cmd_down() {
+  local lane
+  lane="$(lane_from_arg "${1-}" "$CLIENT")" || exit $?
+  if [[ "${1-}" =~ ^[1-9][0-9]*$ ]]; then shift || true; fi
+  lane_apply_runtime "$CLIENT" "$lane" "$ROOT"
+  exec bash "$ROOT/mcp/stop.sh" "$@"
+}
+
+cmd="${1:-status}"
+[ "$#" -gt 0 ] && shift || true
+parse_client "$@"
+set -- ${REST[@]+"${REST[@]}"}
+
+case "$cmd" in
+  acquire) cmd_acquire "$@" ;;
+  release) cmd_release "$@" ;;
+  env) cmd_env "$@" ;;
+  config) cmd_config "$@" ;;
+  status) cmd_status "$@" ;;
+  up) cmd_up "$@" ;;
+  down) cmd_down "$@" ;;
+  help|--help|-h) usage ;;
+  *) echo "ERROR: unknown lane command: $cmd" >&2; usage >&2; exit 64 ;;
+esac
