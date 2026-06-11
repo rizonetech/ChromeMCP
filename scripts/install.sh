@@ -166,18 +166,15 @@ if command -v rsync >/dev/null 2>&1; then
     --exclude='mcp/logs' \
     --exclude='mcp/.playwright-mcp' \
     --exclude='mcp/demo-output' \
-    --exclude='mcp/.playwright.pid' \
-    --exclude='mcp/.playwright-codex.pid' \
-    --exclude='mcp/.logrotate.pid' \
-    --exclude='mcp/.logrotate-codex.pid' \
+    --exclude='mcp/.playwright*.pid' \
+    --exclude='mcp/.logrotate*.pid' \
     --exclude='__pycache__' \
     "$SOURCE_DIR/" "$PREFIX/"
 else
   ( cd "$SOURCE_DIR" && tar --exclude='.git' --exclude='mcp/node_modules' \
         --exclude='mcp/logs' --exclude='mcp/.playwright-mcp' \
-        --exclude='mcp/demo-output' --exclude='mcp/.playwright.pid' \
-        --exclude='mcp/.playwright-codex.pid' \
-        --exclude='mcp/.logrotate.pid' --exclude='mcp/.logrotate-codex.pid' \
+        --exclude='mcp/demo-output' --exclude='mcp/.playwright*.pid' \
+        --exclude='mcp/.logrotate*.pid' \
         --exclude='__pycache__' \
         -cf - . ) | ( cd "$PREFIX" && tar -xf - )
 fi
@@ -187,7 +184,7 @@ fi
 for f in chromemcp mcp-up mcp-down mcp-status mcp-enable mcp-disable \
          mcp-logs mcp-token bridge-check chrome setup-bridge \
          chrome-codex setup-bridge-codex mcp-up-codex mcp-down-codex \
-         mcp-status-codex; do
+         mcp-status-codex codex-lane; do
   [ -f "$PREFIX/$f" ] && chmod +x "$PREFIX/$f"
 done
 [ -f "$PREFIX/scripts/install.sh" ] && chmod +x "$PREFIX/scripts/install.sh"
@@ -248,10 +245,12 @@ echo "  chromemcp token           # print the bearer token for your client confi
 echo "  chromemcp test            # smoke test"
 echo ""
 echo "Codex isolation (separate from Claude/default ChromeMCP):"
-echo "  chromemcp codex-bridge    # one-time, UAC required, exposes CDP port 9232"
-echo "  chromemcp codex-chrome    # launch Codex-only Chrome profile"
-echo "  chromemcp codex-up        # start Codex-only MCP on http://127.0.0.1:8941/mcp"
-echo "  chromemcp codex-status    # verify Codex-only MCP health"
+echo "  chromemcp codex-lane acquire --format shell"
+echo "                              # claim a numbered Codex lane for a run"
+echo "  chromemcp codex-bridge N    # one-time/UAC per lane, exposes that lane's CDP port"
+echo "  chromemcp codex-chrome N    # launch that lane's Chrome profile"
+echo "  chromemcp codex-up N        # start that lane's MCP server"
+echo "  chromemcp codex-status N    # verify that lane's MCP health"
 echo ""
 echo "Optional (auto-restart + survives logout):"
 echo "  chromemcp enable          # install the systemd user unit"

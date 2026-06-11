@@ -65,10 +65,11 @@ If Claude Code or another MCP client is already using the default ChromeMCP
 instance, run Codex on its own ports and Chrome profile:
 
 ```bash
-chromemcp codex-bridge    # one-time, UAC required; bridges CDP port 9232
-chromemcp codex-chrome    # launches %LOCALAPPDATA%\ChromeMCP-Codex\Profile
-chromemcp codex-up        # starts http://127.0.0.1:8941/mcp
-chromemcp codex-status    # verifies the isolated stack
+eval "$(chromemcp codex-lane acquire --format shell --owner "overnight-$$")"
+chromemcp codex-bridge "$CODEX_CHROMEMCP_LANE"
+chromemcp codex-chrome "$CODEX_CHROMEMCP_LANE"
+chromemcp codex-up "$CODEX_CHROMEMCP_LANE"
+chromemcp codex-status "$CODEX_CHROMEMCP_LANE"
 ```
 
 The default instance remains unchanged on MCP `8931`, upstream `8932`, CDP
@@ -80,9 +81,19 @@ profile `%LOCALAPPDATA%\ChromeMCP-Codex\Profile`.
 Point Codex at `mcp/client-config-codex.json` or set:
 
 ```bash
-export MCP_URL=http://127.0.0.1:8941/mcp
-export MCP_TOKEN_PATH=~/.config/chromemcp-codex/token
+eval "$(chromemcp codex-lane env "$CODEX_CHROMEMCP_LANE")"
 ```
+
+Release the lock when the run is finished:
+
+```bash
+chromemcp codex-lane release "$CODEX_CHROMEMCP_LANE"
+```
+
+Lane 1 keeps the compatibility defaults above. Lane 2 uses MCP `8951`,
+upstream `8952`, CDP `9242`, token `~/.config/chromemcp-codex-2/token`, and
+profile `%LOCALAPPDATA%\ChromeMCP-Codex-2\Profile`; higher lanes follow the
+same `+10` port pattern.
 
 ## Connect your MCP client
 

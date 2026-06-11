@@ -11,22 +11,19 @@ set -euo pipefail
 
 SELF="$(readlink -f "$0")"
 ROOT="$(dirname "$SELF")"
+# shellcheck source=lib/codex-lanes.sh
+. "$ROOT/lib/codex-lanes.sh"
 
-export PORT="${PORT:-8941}"
-export HOST="${HOST:-127.0.0.1}"
-export UPSTREAM_PORT="${UPSTREAM_PORT:-8942}"
-export CDP_PORT="${CDP_PORT:-9232}"
-export MCP_CHROME_PROFILE_NAME="${MCP_CHROME_PROFILE_NAME:-ChromeMCP-Codex}"
-export MCP_TOKEN_PATH="${MCP_TOKEN_PATH:-${XDG_CONFIG_HOME:-$HOME/.config}/chromemcp-codex/token}"
-export MCP_PID_FILE="${MCP_PID_FILE:-$ROOT/mcp/.playwright-codex.pid}"
-export MCP_LOG_FILE="${MCP_LOG_FILE:-$ROOT/mcp/logs/playwright-mcp-codex.log}"
-export MCP_LOGROTATE_PID_FILE="${MCP_LOGROTATE_PID_FILE:-$ROOT/mcp/.logrotate-codex.pid}"
-export MCP_FOCUS_CHROME_SCRIPT="${MCP_FOCUS_CHROME_SCRIPT:-$ROOT/launcher/Focus-Chrome-Codex.ps1}"
-export MCP_STOP_COMMAND="${MCP_STOP_COMMAND:-$ROOT/mcp-down-codex}"
-export MCP_CLIENT_CONFIG_HINT="${MCP_CLIENT_CONFIG_HINT:-mcp/client-config-codex.json}"
+lane="${1:-$(codex_lane_default)}"
+if [[ "$lane" =~ ^[1-9][0-9]*$ ]]; then
+  shift || true
+else
+  lane="$(codex_lane_default)"
+fi
+codex_lane_apply_runtime "$lane" "$ROOT"
 
 # The default bridge auto-fix path is intentionally disabled here because the
-# default self-elevating cmd wrapper is for 9222. Use `chromemcp codex-bridge`.
+# default self-elevating cmd wrapper is for 9222. Use `chromemcp codex-bridge N`.
 export MCP_NO_AUTO_BRIDGE="${MCP_NO_AUTO_BRIDGE:-1}"
 
 exec bash "$ROOT/mcp/start.sh" "$@"

@@ -4,8 +4,15 @@ set -euo pipefail
 
 SELF="$(readlink -f "$0")"
 ROOT="$(dirname "$SELF")"
+# shellcheck source=lib/codex-lanes.sh
+. "$ROOT/lib/codex-lanes.sh"
 
-export MCP_PID_FILE="${MCP_PID_FILE:-$ROOT/mcp/.playwright-codex.pid}"
-export MCP_LOGROTATE_PID_FILE="${MCP_LOGROTATE_PID_FILE:-$ROOT/mcp/.logrotate-codex.pid}"
+lane="${1:-$(codex_lane_default)}"
+if [[ "$lane" =~ ^[1-9][0-9]*$ ]]; then
+  shift || true
+else
+  lane="$(codex_lane_default)"
+fi
+codex_lane_apply_runtime "$lane" "$ROOT"
 
 exec bash "$ROOT/mcp/stop.sh" "$@"

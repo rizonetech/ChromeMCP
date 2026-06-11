@@ -45,6 +45,8 @@ Codex isolation:
                                  on http://127.0.0.1:8941/mcp
   codex-down                     stop Codex's isolated MCP server
   codex-status                   health report for the Codex MCP server
+  codex-lane acquire|release|env|status
+                                 claim and describe numbered Codex lanes
 
 Setup:
   setup-bridge [/refresh|/remove]
@@ -78,6 +80,7 @@ Maintenance:
 
 Environment overrides honoured by subcommands:
   PORT / HOST / UPSTREAM_PORT
+  CODEX_CHROMEMCP_LANE / CODEX_CHROMEMCP_MAX_LANE
   MCP_AUTH_TOKEN / MCP_NO_AUTH / MCP_TOKEN_PATH
   MCP_CDP_PROBE_INTERVAL_MS / MCP_NO_AUTO_CHROME / MCP_NO_AUTO_BRIDGE
   MCP_LOG_LEVEL / MCP_LOG_FORMAT / MCP_LOG_MAX_MB / MCP_LOG_KEEP
@@ -135,6 +138,9 @@ case "$cmd" in
     ;;
   codex-status)
     exec bash "$DIR/mcp-status-codex" "$@"
+    ;;
+  codex-lane|codex-lanes)
+    exec bash "$DIR/codex-lane" "$@"
     ;;
   test|smoketest)
     exec bash "$DIR/mcp/test.sh" "$@"

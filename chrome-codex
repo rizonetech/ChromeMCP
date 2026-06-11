@@ -4,7 +4,17 @@ set -euo pipefail
 
 SELF="$(readlink -f "$0")"
 DIR="$(dirname "$SELF")"
+# shellcheck source=lib/codex-lanes.sh
+. "$DIR/lib/codex-lanes.sh"
 PS1_WIN_PATH="$(wslpath -w "$DIR/launcher/Launch-Chrome.ps1")"
+
+lane="${1:-$(codex_lane_default)}"
+if [[ "$lane" =~ ^[1-9][0-9]*$ ]]; then
+  shift || true
+else
+  lane="$(codex_lane_default)"
+fi
+codex_lane_apply_runtime "$lane" "$DIR"
 
 POWERSHELL_EXE="$(command -v powershell.exe || true)"
 if [ -z "$POWERSHELL_EXE" ]; then
@@ -25,6 +35,6 @@ if [ -z "$POWERSHELL_EXE" ]; then
 fi
 
 exec "$POWERSHELL_EXE" -NoProfile -ExecutionPolicy Bypass -File "$PS1_WIN_PATH" \
-  -Port "${CDP_PORT:-9232}" \
-  -ProfileName "${MCP_CHROME_PROFILE_NAME:-ChromeMCP-Codex}" \
+  -Port "$CDP_PORT" \
+  -ProfileName "$MCP_CHROME_PROFILE_NAME" \
   "$@"

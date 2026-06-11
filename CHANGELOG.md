@@ -20,6 +20,11 @@ All notable changes to ChromeMCP are recorded here. Format loosely follows
   `~/.config/chromemcp-codex/token`, and Windows profile
   `%LOCALAPPDATA%\ChromeMCP-Codex\Profile`, leaving the default Claude/shared
   stack on `8931/8932/9222` untouched.
+- **Codex lane allocation** via `chromemcp codex-lane acquire|release|env|status`.
+  Multiple Codex overnight runs can claim separate lanes: lane 1 uses
+  `8941/8942/9232`, lane 2 uses `8951/8952/9242`, and higher lanes follow the
+  same `+10` pattern with separate token paths, PID files, logs, and Windows
+  Chrome profiles.
 - **Restructured README** — deep content moved to `docs/TROUBLESHOOTING.md`
   (reconnection, bridge self-healing, systemd supervision) and
   `docs/CONFIGURATION.md` (full env-var reference, log rotation details).
