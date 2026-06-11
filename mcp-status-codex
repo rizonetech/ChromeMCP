@@ -7,11 +7,9 @@ ROOT="$(dirname "$SELF")"
 # shellcheck source=lib/codex-lanes.sh
 . "$ROOT/lib/codex-lanes.sh"
 
-lane="${1:-$(codex_lane_default)}"
-if [[ "$lane" =~ ^[1-9][0-9]*$ ]]; then
+lane="$(codex_lane_from_arg "${1-}")" || exit $?
+if [[ "${1-}" =~ ^[1-9][0-9]*$ ]]; then
   shift || true
-else
-  lane="$(codex_lane_default)"
 fi
 codex_lane_apply_runtime "$lane" "$ROOT"
 export MCP_UNIT_NAME="${MCP_UNIT_NAME:-}"

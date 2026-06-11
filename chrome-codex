@@ -8,11 +8,9 @@ DIR="$(dirname "$SELF")"
 . "$DIR/lib/codex-lanes.sh"
 PS1_WIN_PATH="$(wslpath -w "$DIR/launcher/Launch-Chrome.ps1")"
 
-lane="${1:-$(codex_lane_default)}"
-if [[ "$lane" =~ ^[1-9][0-9]*$ ]]; then
+lane="$(codex_lane_from_arg "${1-}")" || exit $?
+if [[ "${1-}" =~ ^[1-9][0-9]*$ ]]; then
   shift || true
-else
-  lane="$(codex_lane_default)"
 fi
 codex_lane_apply_runtime "$lane" "$DIR"
 

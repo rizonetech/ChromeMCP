@@ -17,6 +17,24 @@ codex_lane_validate() {
   fi
 }
 
+# Resolve the lane from a wrapper's first positional argument.
+# Empty or flag-like ("-...") args fall back to the default lane (the caller
+# passes them through to the downstream script); anything else must be a
+# positive integer or we fail loudly instead of silently using lane 1.
+codex_lane_from_arg() {
+  local arg="${1-}"
+  if [ -z "$arg" ] || [[ "$arg" == -* ]]; then
+    codex_lane_default
+    return 0
+  fi
+  if [[ "$arg" =~ ^[1-9][0-9]*$ ]]; then
+    printf '%s\n' "$arg"
+    return 0
+  fi
+  echo "ERROR: Codex lane must be a positive integer, got: $arg" >&2
+  return 64
+}
+
 codex_lane_suffix() {
   local lane="$1"
   if [ "$lane" = "1" ]; then

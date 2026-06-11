@@ -14,16 +14,14 @@ ROOT="$(dirname "$SELF")"
 # shellcheck source=lib/codex-lanes.sh
 . "$ROOT/lib/codex-lanes.sh"
 
-lane="${1:-$(codex_lane_default)}"
-if [[ "$lane" =~ ^[1-9][0-9]*$ ]]; then
+lane="$(codex_lane_from_arg "${1-}")" || exit $?
+if [[ "${1-}" =~ ^[1-9][0-9]*$ ]]; then
   shift || true
-else
-  lane="$(codex_lane_default)"
 fi
 codex_lane_apply_runtime "$lane" "$ROOT"
 
-# The default bridge auto-fix path is intentionally disabled here because the
-# default self-elevating cmd wrapper is for 9222. Use `chromemcp codex-bridge N`.
-export MCP_NO_AUTO_BRIDGE="${MCP_NO_AUTO_BRIDGE:-1}"
+# mcp/start.sh's auto-bridge is lane-aware (it elevates Setup-WSL-Portproxy.ps1
+# with -Port "$CDP_PORT" for non-default ports), so no suppression is needed.
+# Set MCP_NO_AUTO_BRIDGE=1 to opt out of the UAC prompt.
 
 exec bash "$ROOT/mcp/start.sh" "$@"

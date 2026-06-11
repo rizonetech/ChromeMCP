@@ -1,5 +1,5 @@
 {
-  "_comment": "Codex-isolated ChromeMCP endpoint for lane 1. This keeps Codex on its own MCP ports, CDP port, token file, and Windows Chrome profile so it does not drive the default Claude/shared ChromeMCP instance. For concurrent runs, claim a lane with 'chromemcp codex-lane acquire' and use the returned MCP_URL/MCP_TOKEN_PATH. Start lane 1 with 'chromemcp codex-bridge 1', 'chromemcp codex-chrome 1', then 'chromemcp codex-up 1'. SUBSTITUTE <TOKEN> with the output of 'MCP_TOKEN_PATH=~/.config/chromemcp-codex/token chromemcp token'.",
+  "_comment": "Codex-isolated ChromeMCP endpoint for LANE 1 ONLY (port 8941). For any other lane, generate the correct config with 'chromemcp codex-lane config N' instead of copying this file. This keeps Codex on its own MCP ports, CDP port, token file, and Windows Chrome profile so it does not drive the default Claude/shared ChromeMCP instance. For concurrent runs, claim a lane with 'chromemcp codex-lane acquire' and use the returned MCP_URL/MCP_TOKEN_PATH. Start lane 1 with 'chromemcp codex-bridge 1', 'chromemcp codex-chrome 1', then 'chromemcp codex-up 1'. SUBSTITUTE <TOKEN> with the output of 'MCP_TOKEN_PATH=~/.config/chromemcp-codex/token chromemcp token'.",
   "mcpServers": {
     "chromemcp-playwright": {
       "type": "http",

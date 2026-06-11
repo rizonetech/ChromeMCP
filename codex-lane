@@ -15,6 +15,7 @@ Usage:
   chromemcp codex-lane acquire [--lane N] [--max N] [--format shell|json|plain] [--owner TEXT]
   chromemcp codex-lane release N
   chromemcp codex-lane env [N] [--format shell|json|plain]
+  chromemcp codex-lane config [N]
   chromemcp codex-lane status
 
 Lane ports:
@@ -43,6 +44,30 @@ lock_dir_for_lane() {
   printf '%s/lane-%s.lock\n' "$STATE_DIR" "$1"
 }
 
+# A lock is stale when its meta records a PID on THIS host that is no longer
+# running. Locks without meta (mid-acquire race) or from other hosts are
+# never reclaimed.
+lock_is_stale() {
+  local dir="$1" pid host
+  [ -f "$dir/meta" ] || return 1
+  pid="$(sed -n 's/^pid=//p' "$dir/meta" | head -n1)"
+  host="$(sed -n 's/^host=//p' "$dir/meta" | head -n1)"
+  [ "$host" = "$(hostname)" ] || return 1
+  [[ "$pid" =~ ^[0-9]+$ ]] || return 1
+  ! kill -0 "$pid" 2>/dev/null
+}
+
+grant_lane() {
+  local lane="$1" owner="$2" dir="$3"
+  {
+    printf 'lane=%s\n' "$lane"
+    printf 'owner=%s\n' "$owner"
+    printf 'pid=%s\n' "$$"
+    date -u '+created_at=%Y-%m-%dT%H:%M:%SZ'
+    hostname | sed 's/^/host=/'
+  } > "$dir/meta"
+}
+
 cmd_acquire() {
   local requested="" max="${CODEX_CHROMEMCP_MAX_LANE:-4}" format="shell" owner="${USER:-codex}:$$"
   while [ "$#" -gt 0 ]; do
@@ -60,6 +85,16 @@ cmd_acquire() {
     esac
   done
 
+  if ! [[ "$max" =~ ^[1-9][0-9]*$ ]]; then
+    echo "ERROR: --max must be a positive integer, got: $max" >&2
+    exit 64
+  fi
+  # --max raises the validation ceiling for this invocation so the whole
+  # requested range is searchable (ports scale with the lane number).
+  if [ "$max" -gt "${CODEX_CHROMEMCP_MAX_LANE:-9}" ]; then
+    export CODEX_CHROMEMCP_MAX_LANE="$max"
+  fi
+
   mkdir -p "$STATE_DIR"
   local lane start end
   if [ -n "$requested" ]; then
@@ -70,17 +105,14 @@ cmd_acquire() {
   fi
 
   for lane in $(seq "$start" "$end"); do
-    codex_lane_validate "$lane"
     local dir
     dir="$(lock_dir_for_lane "$lane")"
+    if [ -d "$dir" ] && lock_is_stale "$dir"; then
+      echo "Reclaiming stale Codex lane $lane (owner process is gone)." >&2
+      rm -rf "$dir"
+    fi
     if mkdir "$dir" 2>/dev/null; then
-      {
-        printf 'lane=%s\n' "$lane"
-        printf 'owner=%s\n' "$owner"
-        printf 'pid=%s\n' "$$"
-        date -u '+created_at=%Y-%m-%dT%H:%M:%SZ'
-        hostname | sed 's/^/host=/'
-      } > "$dir/meta"
+      grant_lane "$lane" "$owner" "$dir"
       print_lane "$lane" "$format"
       exit 0
     fi
@@ -125,6 +157,32 @@ cmd_env() {
   print_lane "$lane" "$format"
 }
 
+cmd_config() {
+  local lane="${1:-$(codex_lane_default)}"
+  codex_lane_validate "$lane"
+  local suffix
+  suffix="$(codex_lane_suffix "$lane")"
+  python3 - "$lane" "$(codex_lane_mcp_port "$lane")" "$(codex_lane_token_path "$lane")" "$suffix" <<'PY'
+import json
+import sys
+lane, mcp, token, suffix = sys.argv[1:]
+print(json.dumps({
+    "_comment": (
+        f"ChromeMCP client config for Codex lane {lane}. "
+        f"SUBSTITUTE <TOKEN> with the output of "
+        f"'MCP_TOKEN_PATH={token} chromemcp token'."
+    ),
+    "mcpServers": {
+        "chromemcp-playwright": {
+            "type": "http",
+            "url": f"http://localhost:{mcp}/mcp",
+            "headers": {"Authorization": "Bearer <TOKEN>"},
+        }
+    },
+}, indent=2))
+PY
+}
+
 cmd_status() {
   mkdir -p "$STATE_DIR"
   echo "Codex ChromeMCP lanes:"
@@ -132,7 +190,11 @@ cmd_status() {
     local dir lock="free"
     dir="$(lock_dir_for_lane "$lane")"
     if [ -d "$dir" ]; then
-      lock="locked"
+      if lock_is_stale "$dir"; then
+        lock="stale (owner process gone; next acquire reclaims it)"
+      else
+        lock="locked"
+      fi
     fi
     printf '  lane %s: %s, MCP %s, CDP %s, profile %s\n' \
       "$lane" "$lock" "$(codex_lane_mcp_port "$lane")" "$(codex_lane_cdp_port "$lane")" \
@@ -149,6 +211,7 @@ case "$cmd" in
   acquire) cmd_acquire "$@" ;;
   release) cmd_release "$@" ;;
   env) cmd_env "$@" ;;
+  config) cmd_config "$@" ;;
   status) cmd_status "$@" ;;
   help|--help|-h) usage ;;
   *) echo "ERROR: unknown codex-lane command: $cmd" >&2; usage >&2; exit 64 ;;

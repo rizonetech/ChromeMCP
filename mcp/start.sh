@@ -218,26 +218,60 @@ classify_bridge_state() {
 # If CDP is STILL unreachable, the most likely remaining cause is bridge
 # state: either it was never installed, or WSL2 reassigned the gateway IP
 # since it was last installed (drift). Both cases are fixed by re-running
-# Setup-Bridge.cmd, which self-elevates with a UAC prompt. One-time per
+# the bridge installer, which self-elevates with a UAC prompt. One-time per
 # machine in the install case; once per drift event otherwise. Skip with
 # MCP_NO_AUTO_BRIDGE=1.
+#
+# The installer must target $CDP_PORT: Setup-Bridge.cmd only handles the
+# default 9222, so laned stacks (codex lanes etc.) elevate the parameterised
+# Setup-WSL-Portproxy.ps1 directly instead.
+run_bridge_installer() {
+  local mode="${1:-install}"
+  if [ "$CDP_PORT" = "9222" ]; then
+    local cmd_exe bridge_cmd
+    cmd_exe="$(find_windows_exe cmd.exe || true)"
+    bridge_cmd="$(wslpath -w "${PROJECT_ROOT}/Setup-Bridge.cmd" 2>/dev/null || true)"
+    [ -n "$cmd_exe" ] && [ -n "$bridge_cmd" ] || return 1
+    if [ "$mode" = "refresh" ]; then
+      "$cmd_exe" /c "$bridge_cmd" /refresh </dev/null >/dev/null 2>&1 || true
+    else
+      "$cmd_exe" /c "$bridge_cmd" </dev/null >/dev/null 2>&1 || true
+    fi
+  else
+    local pwsh ps1_win ps_array item escaped
+    pwsh="$(find_windows_exe powershell.exe || true)"
+    ps1_win="$(wslpath -w "${PROJECT_ROOT}/launcher/Setup-WSL-Portproxy.ps1" 2>/dev/null || true)"
+    [ -n "$pwsh" ] && [ -n "$ps1_win" ] || return 1
+    local ps_args=(-NoProfile -ExecutionPolicy Bypass -File "$ps1_win" -Port "$CDP_PORT")
+    if [ "$mode" = "refresh" ]; then
+      ps_args+=(-Refresh)
+    fi
+    ps_array="@("
+    for item in "${ps_args[@]}"; do
+      escaped="${item//\'/\'\'}"
+      ps_array+="'$escaped',"
+    done
+    ps_array="${ps_array%,})"
+    "$pwsh" -NoProfile -Command \
+      "Start-Process -Verb RunAs -Wait -FilePath powershell.exe -ArgumentList $ps_array" \
+      </dev/null >/dev/null 2>&1 || true
+  fi
+}
+
 if ! probe_cdp; then
-  CMD_EXE="$(find_windows_exe cmd.exe || true)"
-  if [ -z "${MCP_NO_AUTO_BRIDGE:-}" ] && [ -n "$CMD_EXE" ]; then
-    BRIDGE_CMD="$(wslpath -w "${PROJECT_ROOT}/Setup-Bridge.cmd" 2>/dev/null || true)"
-    if [ -n "$BRIDGE_CMD" ]; then
+  if [ -z "${MCP_NO_AUTO_BRIDGE:-}" ]; then
       STATE="$(classify_bridge_state 2>/dev/null || echo unknown)"
       case "$STATE" in
         drift)
           STALE="$(get_bridge_listenaddrs 2>/dev/null | tr '\n' ' ')"
           echo "Bridge drift detected: WSL gateway is now ${WSLGW}, bridge points at ${STALE}- refreshing..."
           echo "  Approve the UAC prompt on your Windows desktop to continue."
-          "$CMD_EXE" /c "$BRIDGE_CMD" /refresh </dev/null >/dev/null 2>&1 || true
+          run_bridge_installer refresh || true
           ;;
         missing|unknown)
-          echo "Installing the WSL<->Windows bridge (one-time per machine)..."
+          echo "Installing the WSL<->Windows bridge for CDP port ${CDP_PORT}..."
           echo "  Approve the UAC prompt on your Windows desktop to continue."
-          "$CMD_EXE" /c "$BRIDGE_CMD" </dev/null >/dev/null 2>&1 || true
+          run_bridge_installer install || true
           ;;
         ok)
           # Bridge state matches current IP yet CDP still failing — Chrome
@@ -252,7 +286,6 @@ if ! probe_cdp; then
           sleep 0.5
         done
       fi
-    fi
   fi
 fi
 

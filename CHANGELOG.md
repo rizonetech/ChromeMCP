@@ -20,11 +20,36 @@ All notable changes to ChromeMCP are recorded here. Format loosely follows
   `~/.config/chromemcp-codex/token`, and Windows profile
   `%LOCALAPPDATA%\ChromeMCP-Codex\Profile`, leaving the default Claude/shared
   stack on `8931/8932/9222` untouched.
-- **Codex lane allocation** via `chromemcp codex-lane acquire|release|env|status`.
+- **Codex lane allocation** via `chromemcp codex-lane acquire|release|env|config|status`.
   Multiple Codex overnight runs can claim separate lanes: lane 1 uses
   `8941/8942/9232`, lane 2 uses `8951/8952/9242`, and higher lanes follow the
   same `+10` pattern with separate token paths, PID files, logs, and Windows
   Chrome profiles.
+- **Stale lane reclamation** — `codex-lane acquire` records the owner PID and
+  host; when a lock's owner process is gone (crashed overnight run on the same
+  host), the next `acquire` reclaims that lane automatically. `codex-lane
+  status` reports such locks as `stale`. Locks from other hosts are never
+  reclaimed.
+- **`codex-lane config [N]`** emits a ready-to-paste MCP client config JSON
+  with the lane's real port and token path (the static
+  `mcp/client-config-codex.json` documents lane 1 only).
+- **Lane-aware auto-bridge** — `mcp/start.sh` now elevates
+  `Setup-WSL-Portproxy.ps1 -Port "$CDP_PORT"` directly when the stack runs on
+  a non-default CDP port, so laned stacks self-heal bridge drift just like the
+  default stack (`Setup-Bridge.cmd` remains the 9222 path). `mcp-up-codex` no
+  longer force-disables the auto-bridge.
+- **Lane test suite** at `tests/codex-lane.test.sh` covering acquisition,
+  exhaustion, stale reclaim, host/liveness guards, config output, and wrapper
+  argument validation.
+
+### Fixed
+
+- `codex-lane acquire --max N` with N above the validation ceiling now raises
+  the ceiling for that invocation and searches the whole range, instead of
+  aborting mid-scan with a confusing `exceeds CODEX_CHROMEMCP_MAX_LANE` error.
+- The `mcp-up-codex`/`mcp-down-codex`/`mcp-status-codex`/`chrome-codex`/
+  `setup-bridge-codex` wrappers reject a non-numeric lane argument with exit
+  64 instead of silently falling back to lane 1.
 - **Restructured README** — deep content moved to `docs/TROUBLESHOOTING.md`
   (reconnection, bridge self-healing, systemd supervision) and
   `docs/CONFIGURATION.md` (full env-var reference, log rotation details).

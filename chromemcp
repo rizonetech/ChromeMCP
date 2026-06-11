@@ -45,7 +45,7 @@ Codex isolation:
                                  on http://127.0.0.1:8941/mcp
   codex-down                     stop Codex's isolated MCP server
   codex-status                   health report for the Codex MCP server
-  codex-lane acquire|release|env|status
+  codex-lane acquire|release|env|config|status
                                  claim and describe numbered Codex lanes
 
 Setup:
