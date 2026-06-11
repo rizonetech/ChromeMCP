@@ -14,6 +14,12 @@
 .PARAMETER ChromeExe
     Override path to chrome.exe. If omitted, standard install locations are tried.
 
+.PARAMETER ProfileName
+    Windows profile container under %LOCALAPPDATA%. Default ChromeMCP.
+
+.PARAMETER ProfileDir
+    Explicit Chrome profile directory. Overrides ProfileName when set.
+
 .PARAMETER Force
     Launch a new Chrome process even if CDP is already responding on the port.
 #>
@@ -21,6 +27,8 @@
 param(
     [int]$Port = 9222,
     [string]$ChromeExe,
+    [string]$ProfileName = 'ChromeMCP',
+    [string]$ProfileDir,
     [switch]$Force
 )
 
@@ -34,7 +42,9 @@ $ProjectRoot = Split-Path -Parent $ScriptDir
 # (~hundreds of MB of SQLite/mmap files, accessed at high frequency) belongs
 # on Windows-native storage; the project code itself can live anywhere.
 # Path matches Chrome's own convention (%LOCALAPPDATA%\<vendor>\<app>).
-$ProfileDir  = Join-Path $env:LocalAppData 'ChromeMCP\Profile'
+if (-not $ProfileDir) {
+    $ProfileDir = Join-Path $env:LocalAppData "$ProfileName\Profile"
+}
 
 function Find-Chrome {
     if ($ChromeExe) {

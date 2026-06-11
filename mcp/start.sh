@@ -10,6 +10,12 @@
 #   PORT             (default 8931)        - public port (clients connect here)
 #   HOST             (default 127.0.0.1)   - public bind interface
 #   UPSTREAM_PORT    (default 8932)        - internal @playwright/mcp port
+#   CDP_PORT         (default 9222)        - Windows Chrome CDP port
+#   MCP_PID_FILE     (default .playwright.pid)
+#   MCP_LOG_FILE     (default logs/playwright-mcp.log)
+#   MCP_LOGROTATE_PID_FILE (default .logrotate.pid)
+#   MCP_CHROME_PROFILE_NAME (default ChromeMCP)
+#   MCP_CHROME_PROFILE_DIR  (unset)        - explicit Windows Chrome profile dir
 #   CDP_ENDPOINT     (auto)                - upstream Chrome CDP URL
 #   MCP_AUTH_TOKEN   (auto)                - bearer token; auto-generated to
 #                                            ~/.config/chromemcp/token if absent
@@ -56,10 +62,12 @@ if [ -z "${CDP_ENDPOINT:-}" ]; then
   CDP_ENDPOINT="http://${WSLGW}:${CDP_PORT}"
 fi
 
-PID_FILE="$(pwd)/.playwright.pid"
-LOG_FILE="$(pwd)/logs/playwright-mcp.log"
-LOGROTATE_PID_FILE="$(pwd)/.logrotate.pid"
+PID_FILE="${MCP_PID_FILE:-$(pwd)/.playwright.pid}"
+LOG_FILE="${MCP_LOG_FILE:-$(pwd)/logs/playwright-mcp.log}"
+LOGROTATE_PID_FILE="${MCP_LOGROTATE_PID_FILE:-$(pwd)/.logrotate.pid}"
 MCP_URL="http://${HOST}:${PORT}/mcp"
+STOP_COMMAND="${MCP_STOP_COMMAND:-${PROJECT_ROOT}/mcp-down}"
+CLIENT_CONFIG_HINT="${MCP_CLIENT_CONFIG_HINT:-mcp/client-config.json}"
 
 MCP_LOG_MAX_MB="${MCP_LOG_MAX_MB:-10}"
 MCP_LOG_KEEP="${MCP_LOG_KEEP:-5}"
@@ -156,7 +164,14 @@ if ! initial_probe_cdp; then
     LAUNCHER_PS1="$(wslpath -w "${PROJECT_ROOT}/launcher/Launch-Chrome.ps1" 2>/dev/null || true)"
     if [ -n "$LAUNCHER_PS1" ]; then
       echo "Chrome CDP not reachable - auto-launching Chrome on Windows..."
-      "$POWERSHELL_EXE" -NoProfile -ExecutionPolicy Bypass -File "$LAUNCHER_PS1" >/dev/null || true
+      LAUNCH_ARGS=(-NoProfile -ExecutionPolicy Bypass -File "$LAUNCHER_PS1" -Port "$CDP_PORT")
+      if [ -n "${MCP_CHROME_PROFILE_NAME:-}" ]; then
+        LAUNCH_ARGS+=(-ProfileName "$MCP_CHROME_PROFILE_NAME")
+      fi
+      if [ -n "${MCP_CHROME_PROFILE_DIR:-}" ]; then
+        LAUNCH_ARGS+=(-ProfileDir "$MCP_CHROME_PROFILE_DIR")
+      fi
+      "$POWERSHELL_EXE" "${LAUNCH_ARGS[@]}" >/dev/null || true
       # Allow a few seconds for the bridge to forward the freshly-started Chrome.
       for i in $(seq 1 15); do
         probe_cdp && break
@@ -249,8 +264,9 @@ if ! probe_cdp; then
   echo "    * Chrome failed to start on Windows" >&2
   echo "    * MCP_NO_AUTO_CHROME or MCP_NO_AUTO_BRIDGE is set in the env" >&2
   echo "  Manual fallback from project root ${PROJECT_ROOT}:" >&2
-  echo "    ./chrome           # launch Chrome with --remote-debugging-port=${CDP_PORT}" >&2
-  echo "    ./setup-bridge     # one-time, UAC required, exposes ${CDP_PORT} to WSL" >&2
+  echo "    ./chrome -Port ${CDP_PORT}           # launch Chrome with --remote-debugging-port=${CDP_PORT}" >&2
+  echo "    ./setup-bridge                      # one-time, UAC required, exposes 9222 to WSL" >&2
+  echo "    powershell.exe -NoProfile -ExecutionPolicy Bypass -File launcher/Setup-WSL-Portproxy.ps1 -Port ${CDP_PORT}" >&2
   echo "    ./bridge-check     # diagnose whether drift is the cause" >&2
   exit 1
 fi
@@ -325,6 +341,9 @@ if [ "$FOREGROUND" = "1" ]; then
     MCP_UPSTREAM_PORT="$UPSTREAM_PORT" \
     MCP_UPSTREAM_HOST="127.0.0.1" \
     MCP_CDP_ENDPOINT="$CDP_ENDPOINT" \
+    ${MCP_FOCUS_CHROME_SCRIPT:+MCP_FOCUS_CHROME_SCRIPT="$MCP_FOCUS_CHROME_SCRIPT"} \
+    ${MCP_VISIBLE_INTERACTIONS:+MCP_VISIBLE_INTERACTIONS="$MCP_VISIBLE_INTERACTIONS"} \
+    ${MCP_NO_AUTO_CHROME:+MCP_NO_AUTO_CHROME="$MCP_NO_AUTO_CHROME"} \
     ${MCP_AUTH_TOKEN:+MCP_AUTH_TOKEN="$MCP_AUTH_TOKEN"} \
     ${MCP_NO_AUTH:+MCP_NO_AUTH="$MCP_NO_AUTH"} \
     ${MCP_TOKEN_PATH:+MCP_TOKEN_PATH="$MCP_TOKEN_PATH"} \
@@ -340,6 +359,9 @@ setsid nohup env \
   MCP_UPSTREAM_PORT="$UPSTREAM_PORT" \
   MCP_UPSTREAM_HOST="127.0.0.1" \
   MCP_CDP_ENDPOINT="$CDP_ENDPOINT" \
+  ${MCP_FOCUS_CHROME_SCRIPT:+MCP_FOCUS_CHROME_SCRIPT="$MCP_FOCUS_CHROME_SCRIPT"} \
+  ${MCP_VISIBLE_INTERACTIONS:+MCP_VISIBLE_INTERACTIONS="$MCP_VISIBLE_INTERACTIONS"} \
+  ${MCP_NO_AUTO_CHROME:+MCP_NO_AUTO_CHROME="$MCP_NO_AUTO_CHROME"} \
   ${MCP_AUTH_TOKEN:+MCP_AUTH_TOKEN="$MCP_AUTH_TOKEN"} \
   ${MCP_NO_AUTH:+MCP_NO_AUTH="$MCP_NO_AUTH"} \
   ${MCP_TOKEN_PATH:+MCP_TOKEN_PATH="$MCP_TOKEN_PATH"} \
@@ -389,9 +411,9 @@ for i in $(seq 1 20); do
     echo "Playwright MCP ready (PID $(cat "$PID_FILE"))."
     echo "  Endpoint     : ${MCP_URL}"
     echo "  Log          : ${LOG_FILE}"
-    echo "  Stop         : ${PROJECT_ROOT}/mcp-down"
+    echo "  Stop         : ${STOP_COMMAND}"
     echo ""
-    echo "Connect any MCP client by adding the snippet from mcp/client-config.json"
+    echo "Connect any MCP client by adding the snippet from ${CLIENT_CONFIG_HINT}"
     echo "to its mcp.json (e.g. ~/.claude.json or .mcp.json in your project)."
     exit 0
   fi

@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# Stops the isolated Codex ChromeMCP stack.
+set -euo pipefail
+
+SELF="$(readlink -f "$0")"
+ROOT="$(dirname "$SELF")"
+
+export MCP_PID_FILE="${MCP_PID_FILE:-$ROOT/mcp/.playwright-codex.pid}"
+export MCP_LOGROTATE_PID_FILE="${MCP_LOGROTATE_PID_FILE:-$ROOT/mcp/.logrotate-codex.pid}"
+
+exec bash "$ROOT/mcp/stop.sh" "$@"

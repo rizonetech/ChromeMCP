@@ -14,6 +14,12 @@ All notable changes to ChromeMCP are recorded here. Format loosely follows
   to the real CLI at `~/ChromeMCP/chromemcp`. The npm package is a thin
   bootstrap shim — the runtime stays at a stable path independent of npm/nvm
   version churn. Entry point: `bin/chromemcp-npm`.
+- **Codex-isolated stack** via `chromemcp codex-bridge`, `codex-chrome`,
+  `codex-up`, `codex-down`, and `codex-status`. The Codex stack uses MCP
+  `8941`, upstream MCP `8942`, Chrome CDP `9232`, token file
+  `~/.config/chromemcp-codex/token`, and Windows profile
+  `%LOCALAPPDATA%\ChromeMCP-Codex\Profile`, leaving the default Claude/shared
+  stack on `8931/8932/9222` untouched.
 - **Restructured README** — deep content moved to `docs/TROUBLESHOOTING.md`
   (reconnection, bridge self-healing, systemd supervision) and
   `docs/CONFIGURATION.md` (full env-var reference, log rotation details).
@@ -31,6 +37,9 @@ All notable changes to ChromeMCP are recorded here. Format loosely follows
 
 ### Changed
 
+- The launcher, focus helper, PID/log paths, token helper, and Python client
+  defaults now honor environment overrides needed to run multiple local
+  ChromeMCP instances side by side.
 - **Consolidated canonical stack into this repo** (was split across
   `codex-plugins/plugins/chromemcp-browser`). The auth proxy, systemd unit,
   token management, healthz endpoint, bridge drift-heal, and full installer

@@ -14,6 +14,7 @@ set -euo pipefail
 CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
 TOKEN_DIR="$CONFIG_HOME/chromemcp"
 TOKEN_PATH="${MCP_TOKEN_PATH:-$TOKEN_DIR/token}"
+TOKEN_DIR="$(dirname "$TOKEN_PATH")"
 
 MODE="show"
 for arg in "$@"; do

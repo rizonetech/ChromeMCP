@@ -1,0 +1,12 @@
+{
+  "_comment": "Codex-isolated ChromeMCP endpoint. This keeps Codex on its own MCP ports, CDP port, token file, and Windows Chrome profile so it does not drive the default Claude/shared ChromeMCP instance. Start with 'chromemcp codex-bridge', 'chromemcp codex-chrome', then 'chromemcp codex-up'. SUBSTITUTE <TOKEN> with the output of 'MCP_TOKEN_PATH=~/.config/chromemcp-codex/token chromemcp token'.",
+  "mcpServers": {
+    "chromemcp-playwright": {
+      "type": "http",
+      "url": "http://localhost:8941/mcp",
+      "headers": {
+        "Authorization": "Bearer <TOKEN>"
+      }
+    }
+  }
+}

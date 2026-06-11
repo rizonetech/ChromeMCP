@@ -8,10 +8,12 @@ from datetime import datetime, timezone
 import json
 import re
 import urllib.parse
+import os
 from typing import Any, Optional
 
 from .core import (
     BrowserEvidenceReport,
+    DEFAULT_URL,
     McpClient,
     McpError,
     McpToolError,
@@ -326,7 +328,7 @@ def blocked_evidence(error: Exception, *, profile: str = "safe-runner") -> dict:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Safe structured ChromeMCP evidence wrapper")
     parser.add_argument("--url", default=None, help="Page URL to verify")
-    parser.add_argument("--mcp-url", default="http://localhost:8931/mcp", help="MCP Streamable HTTP endpoint")
+    parser.add_argument("--mcp-url", default=os.environ.get("MCP_URL", DEFAULT_URL), help="MCP Streamable HTTP endpoint")
     parser.add_argument("--profile", default="page-smoke")
     parser.add_argument("--action", default="opened page")
     parser.add_argument("--expected-title", default=None)

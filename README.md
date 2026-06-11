@@ -59,6 +59,31 @@ chromemcp test           # smoke test
 
 Sign in to any sites you need in the new Chrome window. The profile persists across restarts — sign in once.
 
+## Codex isolation
+
+If Claude Code or another MCP client is already using the default ChromeMCP
+instance, run Codex on its own ports and Chrome profile:
+
+```bash
+chromemcp codex-bridge    # one-time, UAC required; bridges CDP port 9232
+chromemcp codex-chrome    # launches %LOCALAPPDATA%\ChromeMCP-Codex\Profile
+chromemcp codex-up        # starts http://127.0.0.1:8941/mcp
+chromemcp codex-status    # verifies the isolated stack
+```
+
+The default instance remains unchanged on MCP `8931`, upstream `8932`, CDP
+`9222`, token `~/.config/chromemcp/token`, and Windows profile
+`%LOCALAPPDATA%\ChromeMCP\Profile`. The Codex instance uses MCP `8941`,
+upstream `8942`, CDP `9232`, token `~/.config/chromemcp-codex/token`, and
+profile `%LOCALAPPDATA%\ChromeMCP-Codex\Profile`.
+
+Point Codex at `mcp/client-config-codex.json` or set:
+
+```bash
+export MCP_URL=http://127.0.0.1:8941/mcp
+export MCP_TOKEN_PATH=~/.config/chromemcp-codex/token
+```
+
 ## Connect your MCP client
 
 The server listens at `http://localhost:8931/mcp`. Get the token:

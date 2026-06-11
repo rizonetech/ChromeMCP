@@ -167,21 +167,27 @@ if command -v rsync >/dev/null 2>&1; then
     --exclude='mcp/.playwright-mcp' \
     --exclude='mcp/demo-output' \
     --exclude='mcp/.playwright.pid' \
+    --exclude='mcp/.playwright-codex.pid' \
     --exclude='mcp/.logrotate.pid' \
+    --exclude='mcp/.logrotate-codex.pid' \
     --exclude='__pycache__' \
     "$SOURCE_DIR/" "$PREFIX/"
 else
   ( cd "$SOURCE_DIR" && tar --exclude='.git' --exclude='mcp/node_modules' \
         --exclude='mcp/logs' --exclude='mcp/.playwright-mcp' \
         --exclude='mcp/demo-output' --exclude='mcp/.playwright.pid' \
-        --exclude='mcp/.logrotate.pid' --exclude='__pycache__' \
+        --exclude='mcp/.playwright-codex.pid' \
+        --exclude='mcp/.logrotate.pid' --exclude='mcp/.logrotate-codex.pid' \
+        --exclude='__pycache__' \
         -cf - . ) | ( cd "$PREFIX" && tar -xf - )
 fi
 
 # Make sure the wrappers are executable (rsync respects mode but a tar pipe
 # may strip the +x bit if the source files lost it).
 for f in chromemcp mcp-up mcp-down mcp-status mcp-enable mcp-disable \
-         mcp-logs mcp-token bridge-check chrome setup-bridge; do
+         mcp-logs mcp-token bridge-check chrome setup-bridge \
+         chrome-codex setup-bridge-codex mcp-up-codex mcp-down-codex \
+         mcp-status-codex; do
   [ -f "$PREFIX/$f" ] && chmod +x "$PREFIX/$f"
 done
 [ -f "$PREFIX/scripts/install.sh" ] && chmod +x "$PREFIX/scripts/install.sh"
@@ -240,6 +246,12 @@ echo "  chromemcp chrome          # launch signed-in Chrome with CDP"
 echo "  chromemcp up              # start the MCP server"
 echo "  chromemcp token           # print the bearer token for your client config"
 echo "  chromemcp test            # smoke test"
+echo ""
+echo "Codex isolation (separate from Claude/default ChromeMCP):"
+echo "  chromemcp codex-bridge    # one-time, UAC required, exposes CDP port 9232"
+echo "  chromemcp codex-chrome    # launch Codex-only Chrome profile"
+echo "  chromemcp codex-up        # start Codex-only MCP on http://127.0.0.1:8941/mcp"
+echo "  chromemcp codex-status    # verify Codex-only MCP health"
 echo ""
 echo "Optional (auto-restart + survives logout):"
 echo "  chromemcp enable          # install the systemd user unit"

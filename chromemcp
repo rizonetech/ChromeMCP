@@ -35,6 +35,17 @@ Lifecycle:
   status                         health report (mode-aware)
   logs [--all|--grep <p>]        tail the server logs
 
+Codex isolation:
+  codex-bridge [/refresh|/remove]
+                                 install / refresh / remove the Windows bridge
+                                 for Codex's isolated CDP port 9232
+  codex-chrome [args...]         launch Codex's isolated Chrome profile
+                                 on CDP port 9232
+  codex-up                       start Codex's isolated MCP server
+                                 on http://127.0.0.1:8941/mcp
+  codex-down                     stop Codex's isolated MCP server
+  codex-status                   health report for the Codex MCP server
+
 Setup:
   setup-bridge [/refresh|/remove]
                                  install / refresh / remove the
@@ -109,6 +120,21 @@ case "$cmd" in
     ;;
   chrome)
     exec bash "$DIR/chrome" "$@"
+    ;;
+  codex-bridge)
+    exec bash "$DIR/setup-bridge-codex" "$@"
+    ;;
+  codex-chrome)
+    exec bash "$DIR/chrome-codex" "$@"
+    ;;
+  codex-up)
+    exec bash "$DIR/mcp-up-codex" "$@"
+    ;;
+  codex-down)
+    exec bash "$DIR/mcp-down-codex" "$@"
+    ;;
+  codex-status)
+    exec bash "$DIR/mcp-status-codex" "$@"
     ;;
   test|smoketest)
     exec bash "$DIR/mcp/test.sh" "$@"

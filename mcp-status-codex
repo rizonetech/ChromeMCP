@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+# Health report for the isolated Codex ChromeMCP stack.
+set -euo pipefail
+
+SELF="$(readlink -f "$0")"
+ROOT="$(dirname "$SELF")"
+
+export PORT="${PORT:-8941}"
+export HOST="${HOST:-127.0.0.1}"
+export CDP_PORT="${CDP_PORT:-9232}"
+export MCP_PID_FILE="${MCP_PID_FILE:-$ROOT/mcp/.playwright-codex.pid}"
+export MCP_UNIT_NAME="${MCP_UNIT_NAME:-}"
+
+exec bash "$ROOT/mcp-status" "$@"
