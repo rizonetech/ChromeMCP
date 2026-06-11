@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+# Starts an isolated Codex ChromeMCP stack.
+#
+# Defaults:
+#   public MCP:    http://127.0.0.1:8941/mcp
+#   upstream MCP:  127.0.0.1:8942
+#   Chrome CDP:    Windows/WSL bridge port 9232
+#   Chrome profile:%LOCALAPPDATA%\ChromeMCP-Codex\Profile
+#   token:         ~/.config/chromemcp-codex/token
+set -euo pipefail
+
+SELF="$(readlink -f "$0")"
+ROOT="$(dirname "$SELF")"
+# shellcheck source=lib/codex-lanes.sh
+. "$ROOT/lib/codex-lanes.sh"
+
+lane="$(codex_lane_from_arg "${1-}")" || exit $?
+if [[ "${1-}" =~ ^[1-9][0-9]*$ ]]; then
+  shift || true
+fi
+codex_lane_apply_runtime "$lane" "$ROOT"
+
+# mcp/start.sh's auto-bridge is lane-aware (it elevates Setup-WSL-Portproxy.ps1
+# with -Port "$CDP_PORT" for non-default ports), so no suppression is needed.
+# Set MCP_NO_AUTO_BRIDGE=1 to opt out of the UAC prompt.
+
+exec bash "$ROOT/mcp/start.sh" "$@"

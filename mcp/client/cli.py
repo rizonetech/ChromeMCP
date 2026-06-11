@@ -5,7 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 
-from .core import McpClient, McpError, ProjectTabSession
+from .core import DEFAULT_URL, McpClient, McpError, ProjectTabSession
 
 
 def _client(args) -> McpClient:
@@ -62,7 +62,7 @@ def cmd_evidence(args) -> int:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="ChromeMCP Python client helper")
-    parser.add_argument("--url", default="http://localhost:8931/mcp", help="MCP Streamable HTTP endpoint")
+    parser.add_argument("--url", default=DEFAULT_URL, help="MCP Streamable HTTP endpoint")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     tabs = subparsers.add_parser("tabs", help="List live Chrome tabs")

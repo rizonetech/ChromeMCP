@@ -14,13 +14,14 @@ set -euo pipefail
 
 SELF="$(readlink -f "$0")"
 REPO_ROOT="$(dirname "$SELF")"
-UNIT_NAME="chromemcp.service"
+UNIT_NAME="${MCP_UNIT_NAME-chromemcp.service}"
 PORT="${PORT:-8931}"
 HOST="${HOST:-127.0.0.1}"
 HEALTH_URL="http://${HOST}:${PORT}/healthz"
-PID_FILE="$REPO_ROOT/mcp/.playwright.pid"
+PID_FILE="${MCP_PID_FILE:-$REPO_ROOT/mcp/.playwright.pid}"
 
 is_supervised() {
+  [ -n "$UNIT_NAME" ] || return 1
   systemctl --user is-system-running >/dev/null 2>&1 || return 1
   systemctl --user list-unit-files --type=service 2>/dev/null | grep -q "^$UNIT_NAME"
 }

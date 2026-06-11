@@ -10,7 +10,9 @@
 #>
 [CmdletBinding()]
 param(
-    [int]$Port = 9222
+    [int]$Port = 9222,
+    [string]$ProfileName = 'ChromeMCP',
+    [string]$ProfileDir
 )
 
 $ErrorActionPreference = 'Stop'
@@ -35,7 +37,10 @@ namespace ChromeMCP {
 
 $SW_RESTORE = 9
 
-$profileNeedle = Join-Path $env:LocalAppData 'ChromeMCP\Profile'
+if (-not $ProfileDir) {
+    $ProfileDir = Join-Path $env:LocalAppData "$ProfileName\Profile"
+}
+$profileNeedle = $ProfileDir
 $profileProcessIds = @(Get-CimInstance Win32_Process -Filter "name = 'chrome.exe'" -ErrorAction SilentlyContinue |
     Where-Object { $_.CommandLine -and $_.CommandLine.Contains($profileNeedle) } |
     ForEach-Object { [int]$_.ProcessId })

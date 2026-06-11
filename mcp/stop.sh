@@ -3,8 +3,8 @@
 set -euo pipefail
 
 cd "$(dirname "$(readlink -f "$0")")"
-PID_FILE="$(pwd)/.playwright.pid"
-LOGROTATE_PID_FILE="$(pwd)/.logrotate.pid"
+PID_FILE="${MCP_PID_FILE:-$(pwd)/.playwright.pid}"
+LOGROTATE_PID_FILE="${MCP_LOGROTATE_PID_FILE:-$(pwd)/.logrotate.pid}"
 
 # Kill the log rotator sidecar first (if any). It's an independent session,
 # so we have to clean it up explicitly — the proxy doesn't own it.

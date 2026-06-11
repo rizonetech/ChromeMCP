@@ -4,7 +4,7 @@ All notable changes to ChromeMCP are recorded here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.2.0] — 2026-06-11
 
 ### Added
 
@@ -14,11 +14,47 @@ All notable changes to ChromeMCP are recorded here. Format loosely follows
   to the real CLI at `~/ChromeMCP/chromemcp`. The npm package is a thin
   bootstrap shim — the runtime stays at a stable path independent of npm/nvm
   version churn. Entry point: `bin/chromemcp-npm`.
+- **Codex-isolated stack** via `chromemcp codex-bridge`, `codex-chrome`,
+  `codex-up`, `codex-down`, and `codex-status`. The Codex stack uses MCP
+  `8941`, upstream MCP `8942`, Chrome CDP `9232`, token file
+  `~/.config/chromemcp-codex/token`, and Windows profile
+  `%LOCALAPPDATA%\ChromeMCP-Codex\Profile`, leaving the default Claude/shared
+  stack on `8931/8932/9222` untouched.
+- **Codex lane allocation** via `chromemcp codex-lane acquire|release|env|config|status`.
+  Multiple Codex overnight runs can claim separate lanes: lane 1 uses
+  `8941/8942/9232`, lane 2 uses `8951/8952/9242`, and higher lanes follow the
+  same `+10` pattern with separate token paths, PID files, logs, and Windows
+  Chrome profiles.
+- **Stale lane reclamation** — `codex-lane acquire` records the owner PID and
+  host; when a lock's owner process is gone (crashed overnight run on the same
+  host), the next `acquire` reclaims that lane automatically. `codex-lane
+  status` reports such locks as `stale`. Locks from other hosts are never
+  reclaimed.
+- **`codex-lane config [N]`** emits a ready-to-paste MCP client config JSON
+  with the lane's real port and token path (the static
+  `mcp/client-config-codex.json` documents lane 1 only).
+- **Lane-aware auto-bridge** — `mcp/start.sh` now elevates
+  `Setup-WSL-Portproxy.ps1 -Port "$CDP_PORT"` directly when the stack runs on
+  a non-default CDP port, so laned stacks self-heal bridge drift just like the
+  default stack (`Setup-Bridge.cmd` remains the 9222 path). `mcp-up-codex` no
+  longer force-disables the auto-bridge.
+- **Lane test suite** at `tests/codex-lane.test.sh` covering acquisition,
+  exhaustion, stale reclaim, host/liveness guards, config output, and wrapper
+  argument validation.
 - **Restructured README** — deep content moved to `docs/TROUBLESHOOTING.md`
   (reconnection, bridge self-healing, systemd supervision) and
   `docs/CONFIGURATION.md` (full env-var reference, log rotation details).
   README is now ~120 lines covering what/why, architecture, requirements,
   install, quick start, client connection, CLI reference, and links.
+
+### Fixed
+
+- `codex-lane acquire --max N` with N above the validation ceiling now raises
+  the ceiling for that invocation and searches the whole range, instead of
+  aborting mid-scan with a confusing `exceeds CODEX_CHROMEMCP_MAX_LANE` error.
+- The `mcp-up-codex`/`mcp-down-codex`/`mcp-status-codex`/`chrome-codex`/
+  `setup-bridge-codex` wrappers reject a non-numeric lane argument with exit
+  64 instead of silently falling back to lane 1.
 
 ### Verified Chrome versions
 
@@ -31,6 +67,9 @@ All notable changes to ChromeMCP are recorded here. Format loosely follows
 
 ### Changed
 
+- The launcher, focus helper, PID/log paths, token helper, and Python client
+  defaults now honor environment overrides needed to run multiple local
+  ChromeMCP instances side by side.
 - **Consolidated canonical stack into this repo** (was split across
   `codex-plugins/plugins/chromemcp-browser`). The auth proxy, systemd unit,
   token management, healthz endpoint, bridge drift-heal, and full installer

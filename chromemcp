@@ -35,6 +35,19 @@ Lifecycle:
   status                         health report (mode-aware)
   logs [--all|--grep <p>]        tail the server logs
 
+Codex isolation:
+  codex-bridge [/refresh|/remove]
+                                 install / refresh / remove the Windows bridge
+                                 for Codex's isolated CDP port 9232
+  codex-chrome [args...]         launch Codex's isolated Chrome profile
+                                 on CDP port 9232
+  codex-up                       start Codex's isolated MCP server
+                                 on http://127.0.0.1:8941/mcp
+  codex-down                     stop Codex's isolated MCP server
+  codex-status                   health report for the Codex MCP server
+  codex-lane acquire|release|env|config|status
+                                 claim and describe numbered Codex lanes
+
 Setup:
   setup-bridge [/refresh|/remove]
                                  install / refresh / remove the
@@ -67,6 +80,7 @@ Maintenance:
 
 Environment overrides honoured by subcommands:
   PORT / HOST / UPSTREAM_PORT
+  CODEX_CHROMEMCP_LANE / CODEX_CHROMEMCP_MAX_LANE
   MCP_AUTH_TOKEN / MCP_NO_AUTH / MCP_TOKEN_PATH
   MCP_CDP_PROBE_INTERVAL_MS / MCP_NO_AUTO_CHROME / MCP_NO_AUTO_BRIDGE
   MCP_LOG_LEVEL / MCP_LOG_FORMAT / MCP_LOG_MAX_MB / MCP_LOG_KEEP
@@ -109,6 +123,24 @@ case "$cmd" in
     ;;
   chrome)
     exec bash "$DIR/chrome" "$@"
+    ;;
+  codex-bridge)
+    exec bash "$DIR/setup-bridge-codex" "$@"
+    ;;
+  codex-chrome)
+    exec bash "$DIR/chrome-codex" "$@"
+    ;;
+  codex-up)
+    exec bash "$DIR/mcp-up-codex" "$@"
+    ;;
+  codex-down)
+    exec bash "$DIR/mcp-down-codex" "$@"
+    ;;
+  codex-status)
+    exec bash "$DIR/mcp-status-codex" "$@"
+    ;;
+  codex-lane|codex-lanes)
+    exec bash "$DIR/codex-lane" "$@"
     ;;
   test|smoketest)
     exec bash "$DIR/mcp/test.sh" "$@"

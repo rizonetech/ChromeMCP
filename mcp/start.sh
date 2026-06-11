@@ -10,6 +10,12 @@
 #   PORT             (default 8931)        - public port (clients connect here)
 #   HOST             (default 127.0.0.1)   - public bind interface
 #   UPSTREAM_PORT    (default 8932)        - internal @playwright/mcp port
+#   CDP_PORT         (default 9222)        - Windows Chrome CDP port
+#   MCP_PID_FILE     (default .playwright.pid)
+#   MCP_LOG_FILE     (default logs/playwright-mcp.log)
+#   MCP_LOGROTATE_PID_FILE (default .logrotate.pid)
+#   MCP_CHROME_PROFILE_NAME (default ChromeMCP)
+#   MCP_CHROME_PROFILE_DIR  (unset)        - explicit Windows Chrome profile dir
 #   CDP_ENDPOINT     (auto)                - upstream Chrome CDP URL
 #   MCP_AUTH_TOKEN   (auto)                - bearer token; auto-generated to
 #                                            ~/.config/chromemcp/token if absent
@@ -56,10 +62,12 @@ if [ -z "${CDP_ENDPOINT:-}" ]; then
   CDP_ENDPOINT="http://${WSLGW}:${CDP_PORT}"
 fi
 
-PID_FILE="$(pwd)/.playwright.pid"
-LOG_FILE="$(pwd)/logs/playwright-mcp.log"
-LOGROTATE_PID_FILE="$(pwd)/.logrotate.pid"
+PID_FILE="${MCP_PID_FILE:-$(pwd)/.playwright.pid}"
+LOG_FILE="${MCP_LOG_FILE:-$(pwd)/logs/playwright-mcp.log}"
+LOGROTATE_PID_FILE="${MCP_LOGROTATE_PID_FILE:-$(pwd)/.logrotate.pid}"
 MCP_URL="http://${HOST}:${PORT}/mcp"
+STOP_COMMAND="${MCP_STOP_COMMAND:-${PROJECT_ROOT}/mcp-down}"
+CLIENT_CONFIG_HINT="${MCP_CLIENT_CONFIG_HINT:-mcp/client-config.json}"
 
 MCP_LOG_MAX_MB="${MCP_LOG_MAX_MB:-10}"
 MCP_LOG_KEEP="${MCP_LOG_KEEP:-5}"
@@ -156,7 +164,14 @@ if ! initial_probe_cdp; then
     LAUNCHER_PS1="$(wslpath -w "${PROJECT_ROOT}/launcher/Launch-Chrome.ps1" 2>/dev/null || true)"
     if [ -n "$LAUNCHER_PS1" ]; then
       echo "Chrome CDP not reachable - auto-launching Chrome on Windows..."
-      "$POWERSHELL_EXE" -NoProfile -ExecutionPolicy Bypass -File "$LAUNCHER_PS1" >/dev/null || true
+      LAUNCH_ARGS=(-NoProfile -ExecutionPolicy Bypass -File "$LAUNCHER_PS1" -Port "$CDP_PORT")
+      if [ -n "${MCP_CHROME_PROFILE_NAME:-}" ]; then
+        LAUNCH_ARGS+=(-ProfileName "$MCP_CHROME_PROFILE_NAME")
+      fi
+      if [ -n "${MCP_CHROME_PROFILE_DIR:-}" ]; then
+        LAUNCH_ARGS+=(-ProfileDir "$MCP_CHROME_PROFILE_DIR")
+      fi
+      "$POWERSHELL_EXE" "${LAUNCH_ARGS[@]}" >/dev/null || true
       # Allow a few seconds for the bridge to forward the freshly-started Chrome.
       for i in $(seq 1 15); do
         probe_cdp && break
@@ -203,26 +218,60 @@ classify_bridge_state() {
 # If CDP is STILL unreachable, the most likely remaining cause is bridge
 # state: either it was never installed, or WSL2 reassigned the gateway IP
 # since it was last installed (drift). Both cases are fixed by re-running
-# Setup-Bridge.cmd, which self-elevates with a UAC prompt. One-time per
+# the bridge installer, which self-elevates with a UAC prompt. One-time per
 # machine in the install case; once per drift event otherwise. Skip with
 # MCP_NO_AUTO_BRIDGE=1.
+#
+# The installer must target $CDP_PORT: Setup-Bridge.cmd only handles the
+# default 9222, so laned stacks (codex lanes etc.) elevate the parameterised
+# Setup-WSL-Portproxy.ps1 directly instead.
+run_bridge_installer() {
+  local mode="${1:-install}"
+  if [ "$CDP_PORT" = "9222" ]; then
+    local cmd_exe bridge_cmd
+    cmd_exe="$(find_windows_exe cmd.exe || true)"
+    bridge_cmd="$(wslpath -w "${PROJECT_ROOT}/Setup-Bridge.cmd" 2>/dev/null || true)"
+    [ -n "$cmd_exe" ] && [ -n "$bridge_cmd" ] || return 1
+    if [ "$mode" = "refresh" ]; then
+      "$cmd_exe" /c "$bridge_cmd" /refresh </dev/null >/dev/null 2>&1 || true
+    else
+      "$cmd_exe" /c "$bridge_cmd" </dev/null >/dev/null 2>&1 || true
+    fi
+  else
+    local pwsh ps1_win ps_array item escaped
+    pwsh="$(find_windows_exe powershell.exe || true)"
+    ps1_win="$(wslpath -w "${PROJECT_ROOT}/launcher/Setup-WSL-Portproxy.ps1" 2>/dev/null || true)"
+    [ -n "$pwsh" ] && [ -n "$ps1_win" ] || return 1
+    local ps_args=(-NoProfile -ExecutionPolicy Bypass -File "$ps1_win" -Port "$CDP_PORT")
+    if [ "$mode" = "refresh" ]; then
+      ps_args+=(-Refresh)
+    fi
+    ps_array="@("
+    for item in "${ps_args[@]}"; do
+      escaped="${item//\'/\'\'}"
+      ps_array+="'$escaped',"
+    done
+    ps_array="${ps_array%,})"
+    "$pwsh" -NoProfile -Command \
+      "Start-Process -Verb RunAs -Wait -FilePath powershell.exe -ArgumentList $ps_array" \
+      </dev/null >/dev/null 2>&1 || true
+  fi
+}
+
 if ! probe_cdp; then
-  CMD_EXE="$(find_windows_exe cmd.exe || true)"
-  if [ -z "${MCP_NO_AUTO_BRIDGE:-}" ] && [ -n "$CMD_EXE" ]; then
-    BRIDGE_CMD="$(wslpath -w "${PROJECT_ROOT}/Setup-Bridge.cmd" 2>/dev/null || true)"
-    if [ -n "$BRIDGE_CMD" ]; then
+  if [ -z "${MCP_NO_AUTO_BRIDGE:-}" ]; then
       STATE="$(classify_bridge_state 2>/dev/null || echo unknown)"
       case "$STATE" in
         drift)
           STALE="$(get_bridge_listenaddrs 2>/dev/null | tr '\n' ' ')"
           echo "Bridge drift detected: WSL gateway is now ${WSLGW}, bridge points at ${STALE}- refreshing..."
           echo "  Approve the UAC prompt on your Windows desktop to continue."
-          "$CMD_EXE" /c "$BRIDGE_CMD" /refresh </dev/null >/dev/null 2>&1 || true
+          run_bridge_installer refresh || true
           ;;
         missing|unknown)
-          echo "Installing the WSL<->Windows bridge (one-time per machine)..."
+          echo "Installing the WSL<->Windows bridge for CDP port ${CDP_PORT}..."
           echo "  Approve the UAC prompt on your Windows desktop to continue."
-          "$CMD_EXE" /c "$BRIDGE_CMD" </dev/null >/dev/null 2>&1 || true
+          run_bridge_installer install || true
           ;;
         ok)
           # Bridge state matches current IP yet CDP still failing — Chrome
@@ -237,7 +286,6 @@ if ! probe_cdp; then
           sleep 0.5
         done
       fi
-    fi
   fi
 fi
 
@@ -249,8 +297,9 @@ if ! probe_cdp; then
   echo "    * Chrome failed to start on Windows" >&2
   echo "    * MCP_NO_AUTO_CHROME or MCP_NO_AUTO_BRIDGE is set in the env" >&2
   echo "  Manual fallback from project root ${PROJECT_ROOT}:" >&2
-  echo "    ./chrome           # launch Chrome with --remote-debugging-port=${CDP_PORT}" >&2
-  echo "    ./setup-bridge     # one-time, UAC required, exposes ${CDP_PORT} to WSL" >&2
+  echo "    ./chrome -Port ${CDP_PORT}           # launch Chrome with --remote-debugging-port=${CDP_PORT}" >&2
+  echo "    ./setup-bridge                      # one-time, UAC required, exposes 9222 to WSL" >&2
+  echo "    powershell.exe -NoProfile -ExecutionPolicy Bypass -File launcher/Setup-WSL-Portproxy.ps1 -Port ${CDP_PORT}" >&2
   echo "    ./bridge-check     # diagnose whether drift is the cause" >&2
   exit 1
 fi
@@ -325,6 +374,11 @@ if [ "$FOREGROUND" = "1" ]; then
     MCP_UPSTREAM_PORT="$UPSTREAM_PORT" \
     MCP_UPSTREAM_HOST="127.0.0.1" \
     MCP_CDP_ENDPOINT="$CDP_ENDPOINT" \
+    ${CHROMEMCP_FOCUS_PORT:+CHROMEMCP_FOCUS_PORT="$CHROMEMCP_FOCUS_PORT"} \
+    ${CHROMEMCP_FOCUS_PROFILE_NAME:+CHROMEMCP_FOCUS_PROFILE_NAME="$CHROMEMCP_FOCUS_PROFILE_NAME"} \
+    ${MCP_FOCUS_CHROME_SCRIPT:+MCP_FOCUS_CHROME_SCRIPT="$MCP_FOCUS_CHROME_SCRIPT"} \
+    ${MCP_VISIBLE_INTERACTIONS:+MCP_VISIBLE_INTERACTIONS="$MCP_VISIBLE_INTERACTIONS"} \
+    ${MCP_NO_AUTO_CHROME:+MCP_NO_AUTO_CHROME="$MCP_NO_AUTO_CHROME"} \
     ${MCP_AUTH_TOKEN:+MCP_AUTH_TOKEN="$MCP_AUTH_TOKEN"} \
     ${MCP_NO_AUTH:+MCP_NO_AUTH="$MCP_NO_AUTH"} \
     ${MCP_TOKEN_PATH:+MCP_TOKEN_PATH="$MCP_TOKEN_PATH"} \
@@ -340,6 +394,11 @@ setsid nohup env \
   MCP_UPSTREAM_PORT="$UPSTREAM_PORT" \
   MCP_UPSTREAM_HOST="127.0.0.1" \
   MCP_CDP_ENDPOINT="$CDP_ENDPOINT" \
+  ${CHROMEMCP_FOCUS_PORT:+CHROMEMCP_FOCUS_PORT="$CHROMEMCP_FOCUS_PORT"} \
+  ${CHROMEMCP_FOCUS_PROFILE_NAME:+CHROMEMCP_FOCUS_PROFILE_NAME="$CHROMEMCP_FOCUS_PROFILE_NAME"} \
+  ${MCP_FOCUS_CHROME_SCRIPT:+MCP_FOCUS_CHROME_SCRIPT="$MCP_FOCUS_CHROME_SCRIPT"} \
+  ${MCP_VISIBLE_INTERACTIONS:+MCP_VISIBLE_INTERACTIONS="$MCP_VISIBLE_INTERACTIONS"} \
+  ${MCP_NO_AUTO_CHROME:+MCP_NO_AUTO_CHROME="$MCP_NO_AUTO_CHROME"} \
   ${MCP_AUTH_TOKEN:+MCP_AUTH_TOKEN="$MCP_AUTH_TOKEN"} \
   ${MCP_NO_AUTH:+MCP_NO_AUTH="$MCP_NO_AUTH"} \
   ${MCP_TOKEN_PATH:+MCP_TOKEN_PATH="$MCP_TOKEN_PATH"} \
@@ -389,9 +448,9 @@ for i in $(seq 1 20); do
     echo "Playwright MCP ready (PID $(cat "$PID_FILE"))."
     echo "  Endpoint     : ${MCP_URL}"
     echo "  Log          : ${LOG_FILE}"
-    echo "  Stop         : ${PROJECT_ROOT}/mcp-down"
+    echo "  Stop         : ${STOP_COMMAND}"
     echo ""
-    echo "Connect any MCP client by adding the snippet from mcp/client-config.json"
+    echo "Connect any MCP client by adding the snippet from ${CLIENT_CONFIG_HINT}"
     echo "to its mcp.json (e.g. ~/.claude.json or .mcp.json in your project)."
     exit 0
   fi

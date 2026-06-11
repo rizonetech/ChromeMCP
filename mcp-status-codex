@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+# Health report for the isolated Codex ChromeMCP stack.
+set -euo pipefail
+
+SELF="$(readlink -f "$0")"
+ROOT="$(dirname "$SELF")"
+# shellcheck source=lib/codex-lanes.sh
+. "$ROOT/lib/codex-lanes.sh"
+
+lane="$(codex_lane_from_arg "${1-}")" || exit $?
+if [[ "${1-}" =~ ^[1-9][0-9]*$ ]]; then
+  shift || true
+fi
+codex_lane_apply_runtime "$lane" "$ROOT"
+export MCP_UNIT_NAME="${MCP_UNIT_NAME:-}"
+
+exec bash "$ROOT/mcp-status" "$@"
