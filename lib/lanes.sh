@@ -88,12 +88,12 @@ lane_validate() {
 }
 
 # Resolve the lane from a wrapper's first positional argument.
-# Empty or flag-like ("-...") args fall back to the client's default lane;
+# Empty or flag-like ("-..." or "/...") args fall back to the client's default lane;
 # anything else must be a positive integer or we fail loudly instead of
 # silently using lane 1.
 lane_from_arg() {
   local arg="${1-}" client="${2:-codex}"
-  if [ -z "$arg" ] || [[ "$arg" == -* ]]; then
+  if [ -z "$arg" ] || [[ "$arg" == -* ]] || [[ "$arg" == /* ]]; then
     lane_default "$client"
     return 0
   fi

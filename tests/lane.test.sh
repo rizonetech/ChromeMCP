@@ -94,6 +94,16 @@ else
 fi
 rm -rf "$STATE_ROOT"
 
+# --- T7: Windows-style slash flags default to lane 1 for claude wrappers ---
+new_state
+out="$(bash -c ". '$ROOT/lib/lanes.sh'; lane_from_arg /refresh claude" 2>&1)"; rc=$?
+if [ "$rc" -eq 0 ] && [ "$out" = "1" ]; then
+  pass "slash-style flags default to claude lane 1"
+else
+  fail "claude slash flag lane parse: expected lane 1, got rc=$rc out=$out"
+fi
+rm -rf "$STATE_ROOT"
+
 echo
 echo "passed=$PASS failed=$FAIL"
 [ "$FAIL" -eq 0 ]

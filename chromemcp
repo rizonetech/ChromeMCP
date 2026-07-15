@@ -36,15 +36,15 @@ Lifecycle:
   logs [--all|--grep <p>]        tail the server logs
 
 Codex isolation:
-  codex-bridge [/refresh|/remove]
+  codex-bridge [lane] [/refresh|/remove]
                                  install / refresh / remove the Windows bridge
-                                 for Codex's isolated CDP port 9232
-  codex-chrome [args...]         launch Codex's isolated Chrome profile
-                                 on CDP port 9232
-  codex-up                       start Codex's isolated MCP server
-                                 on http://127.0.0.1:8941/mcp
-  codex-down                     stop Codex's isolated MCP server
-  codex-status                   health report for the Codex MCP server
+                                 for a Codex lane CDP port, e.g. lane 1 = 9232
+  codex-chrome [lane] [args...]  launch an isolated Codex Chrome profile
+                                 for a lane, e.g. lane 1 uses CDP port 9232
+  codex-up [lane]                start a Codex lane MCP server,
+                                 e.g. lane 1 = http://127.0.0.1:8941/mcp
+  codex-down [lane]              stop a Codex lane MCP server
+  codex-status [lane]            health report for a Codex lane MCP server
   codex-lane acquire|release|env|config|status
                                  claim and describe numbered Codex lanes
                                  (alias for `lane ... --client codex`)
