@@ -4,6 +4,28 @@ All notable changes to ChromeMCP are recorded here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.1] — 2026-07-15
+
+### Changed
+
+- Playwright MCP artifacts now default to the user state directory instead of
+  the current repository and are capped at 128 MiB. Both settings remain
+  configurable through the upstream Playwright MCP environment variables.
+- Chrome watchdog relaunches preserve the configured CDP port and Chrome
+  profile, including isolated lane profiles.
+- Source and release upgrades are now staged and swapped transactionally, with
+  automatic rollback when service restart or health verification fails.
+- Client setup documentation now treats ChromeMCP as shared user-level
+  infrastructure that repositories explicitly opt into; lanes remain available
+  for workflows that require separate browser state or concurrent isolation.
+
+### Fixed
+
+- Lane-aware wrapper commands now treat Windows-style slash options such as
+  `/refresh` as options instead of invalid lane numbers.
+- Installer cleanup, prefix validation, permissions, and symlink handling are
+  hardened against partial or unsafe upgrades.
+
 ## [0.3.0] — 2026-06-11
 
 ### Added
