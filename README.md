@@ -2,7 +2,7 @@
 
 [![npm](https://img.shields.io/npm/v/%40rizonetech%2Fchromemcp)](https://www.npmjs.com/package/@rizonetech/chromemcp) [![license](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
-A small, opinionated stack that lets agents in **WSL2** drive your **real, signed-in Chrome on Windows** through the Model Context Protocol (MCP). You launch Chrome once with CDP enabled against a project-local profile, expose that debug port to WSL through a scoped portproxy + firewall rule, and run [Playwright MCP](https://github.com/microsoft/playwright-mcp) as a long-running HTTP/SSE service that any MCP client (Claude Code, Cursor, Continue, etc.) can attach to. Every client shares the same browser session — same tabs, same cookies, same logins. Multi-client by design: run Claude Code and Cursor simultaneously, both driving the same Chrome window.
+A small, opinionated stack that lets agents in **WSL2** drive your **real, signed-in Chrome on Windows** through the Model Context Protocol (MCP). You launch Chrome once with CDP enabled against a dedicated user-wide profile, expose that debug port to WSL through a scoped portproxy + firewall rule, and run [Playwright MCP](https://github.com/microsoft/playwright-mcp) as a long-running HTTP/SSE service that any MCP client (Codex, Claude Code, Cursor, Continue, etc.) can attach to. Every client shares the same browser session — same tabs, same cookies, same logins. Multi-client by design: repositories point to the same service instead of installing their own ChromeMCP runtime.
 
 ## Architecture
 
@@ -59,10 +59,15 @@ chromemcp test           # smoke test
 
 Sign in to any sites you need in the new Chrome window. The profile persists across restarts — sign in once.
 
-## Codex isolation
+## Optional lanes for isolation or concurrency
 
-If Claude Code or another MCP client is already using the default ChromeMCP
-instance, run Codex on its own ports and Chrome profile:
+The shared instance on `8931` is the default and recommended path, including
+when more than one MCP client is connected. Do not allocate a lane merely
+because another client or repository uses ChromeMCP.
+
+Use a lane only when simultaneous browser actions would interfere, or when a
+workflow explicitly needs separate cookies, storage, login state, or browser
+policy. For an isolated Codex run:
 
 ```bash
 eval "$(chromemcp codex-lane acquire --format shell --owner "overnight-$$")"
@@ -95,7 +100,7 @@ upstream `8952`, CDP `9242`, token `~/.config/chromemcp-codex-2/token`, and
 profile `%LOCALAPPDATA%\ChromeMCP-Codex-2\Profile`; higher lanes follow the
 same `+10` port pattern.
 
-## Lanes for any client
+### Lanes for any client
 
 `codex-lane` is an alias for the client-generalized `lane` command. Each
 client gets its own port band, so concurrent Codex and Claude overnight runs

@@ -34,6 +34,11 @@
 #                                            window before browser tool calls
 #                                            so users can watch interactions.
 #                                            Set to 0 to disable.
+#   PLAYWRIGHT_MCP_OUTPUT_DIR              - artifact directory; defaults to
+#                                            ~/.local/state/chromemcp/artifacts
+#                                            (or $XDG_STATE_HOME equivalent)
+#   PLAYWRIGHT_MCP_OUTPUT_MAX_SIZE         - artifact cap in bytes; defaults
+#                                            to 134217728 (128 MiB)
 set -euo pipefail
 
 cd "$(dirname "$(readlink -f "$0")")"

@@ -2,7 +2,7 @@
   "name": "chromemcp",
   "version": "0.1.0",
   "private": true,
-  "description": "Project-local MCP server stack. Runs Playwright MCP as a long-running HTTP/SSE service connected to ChromeMCP's bridged Chrome via CDP, so any number of MCP clients in WSL can share the same browser session.",
+  "description": "User-wide MCP server stack. Runs Playwright MCP as a long-running HTTP/SSE service connected to ChromeMCP's bridged Chrome via CDP, so opted-in clients and repositories can share the same browser session.",
   "engines": {
     "node": ">=18.18"
   },

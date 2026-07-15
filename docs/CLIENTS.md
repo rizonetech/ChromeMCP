@@ -24,7 +24,8 @@ Merge the `chromemcp-playwright` entry into the MCP client config:
   "mcpServers": {
     "chromemcp-playwright": {
       "type": "http",
-      "url": "http://localhost:8931/mcp"
+      "url": "http://localhost:8931/mcp",
+      "headers": { "Authorization": "Bearer <TOKEN>" }
     }
   }
 }
@@ -59,7 +60,29 @@ Merge the same `mcpServers` entry into:
 
 ## Codex
 
-Use the local Codex plugin. See `docs/CODEX_PLUGIN.md`.
+Codex can opt a trusted web repository into the shared server without installing
+a browser runtime in that repository. Export the shared token before launching
+Codex from the same shell:
+
+```bash
+export CHROMEMCP_AUTH_TOKEN="$(<~/.config/chromemcp/token)"
+```
+
+Then add this to that repository's `.codex/config.toml`:
+
+```toml
+[mcp_servers.chromemcp-playwright]
+url = "http://localhost:8931/mcp"
+bearer_token_env_var = "CHROMEMCP_AUTH_TOKEN"
+enabled = true
+required = false
+```
+
+Do not commit the token itself. Repositories without a web interface or an
+explicit browser need should omit this block. The current shared-runtime setup
+does not install a Codex plugin; `docs/CODEX_PLUGIN.md` is retained only as
+historical packaging guidance unless that distribution path is explicitly
+reintroduced.
 
 ## Python Scripts
 

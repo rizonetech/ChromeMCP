@@ -33,6 +33,10 @@ const crypto = require('node:crypto');
 const { spawn, spawnSync } = require('node:child_process');
 const log = require('./log');
 const { Registry } = require('./metrics');
+const {
+  buildChromeRelaunchArgs,
+  resolvePlaywrightOutputConfig,
+} = require('./runtime-config');
 
 // --- Metrics registry ----------------------------------------------------
 // Defined up front so the watchdog (which lives ~150 lines down) can
@@ -89,6 +93,7 @@ const VISIBLE_FOCUS_INTERVAL_MS = parseInt(process.env.MCP_VISIBLE_FOCUS_INTERVA
 const PROJECT_ROOT = path.dirname(__dirname);
 const FOCUS_CHROME_SCRIPT = process.env.MCP_FOCUS_CHROME_SCRIPT
   || path.join(PROJECT_ROOT, 'launcher', 'Focus-Chrome.ps1');
+const PLAYWRIGHT_OUTPUT = resolvePlaywrightOutputConfig(process.env);
 
 function fail(msg, code = 1) {
   log.error(msg);
@@ -216,6 +221,12 @@ function reply401(res, why) {
 }
 
 // --- Spawn upstream @playwright/mcp --------------------------------------
+try {
+  fs.mkdirSync(PLAYWRIGHT_OUTPUT.outputDir, { recursive: true, mode: 0o700 });
+} catch (e) {
+  fail(`failed to prepare Playwright output directory ${PLAYWRIGHT_OUTPUT.outputDir}: ${e.message}`);
+}
+
 const upstreamArgs = [
   PLAYWRIGHT_CLI,
   '--port', String(UPSTREAM_PORT),
@@ -241,7 +252,11 @@ let expectingChildExit = false;
 function spawnUpstream() {
   const c = spawn(process.execPath, upstreamArgs, {
     stdio: 'inherit',
-    env: process.env,
+    env: {
+      ...process.env,
+      PLAYWRIGHT_MCP_OUTPUT_DIR: PLAYWRIGHT_OUTPUT.outputDir,
+      PLAYWRIGHT_MCP_OUTPUT_MAX_SIZE: PLAYWRIGHT_OUTPUT.outputMaxSize,
+    },
   });
   c.on('exit', (code, signal) => {
     if (expectingChildExit) {
@@ -339,8 +354,14 @@ function triggerChromeRelaunch() {
   const chromeScript = path.join(__dirname, '..', 'chrome');
   try { fs.accessSync(chromeScript, fs.constants.X_OK); } catch { return; }
   chromeRelaunchInflight = true;
-  log.warn(`CDP down ≥${(RELAUNCH_AFTER_MS/1000)|0}s; firing ${chromeScript} to relaunch Chrome on Windows`);
-  const sub = spawn('bash', [chromeScript], { stdio: 'ignore', detached: true });
+  const chromeArgs = buildChromeRelaunchArgs({
+    cdpEndpoint: CDP_ENDPOINT,
+    cdpPort: process.env.CDP_PORT,
+    profileName: process.env.MCP_CHROME_PROFILE_NAME,
+    profileDir: process.env.MCP_CHROME_PROFILE_DIR,
+  });
+  log.warn(`CDP down ≥${(RELAUNCH_AFTER_MS/1000)|0}s; firing ${chromeScript} ${chromeArgs.join(' ')} to relaunch Chrome on Windows`);
+  const sub = spawn('bash', [chromeScript, ...chromeArgs], { stdio: 'ignore', detached: true });
   sub.on('error', () => {});
   sub.unref();
   // Re-allow another relaunch attempt after one minute so we don't loop fire.
@@ -869,6 +890,7 @@ proxyServer.on('error', (e) => fail(`failed to bind ${PUBLIC_HOST}:${PUBLIC_PORT
     } else {
       log.info(`listening on ${PUBLIC_HOST}:${PUBLIC_PORT}, forwarding to ${UPSTREAM_HOST}:${UPSTREAM_PORT} (auth required)`);
     }
+    log.info(`Playwright output: ${PLAYWRIGHT_OUTPUT.outputDir} (max ${PLAYWRIGHT_OUTPUT.outputMaxSize} bytes)`);
     log.info(`visible interactions ${VISIBLE_INTERACTIONS ? 'enabled' : 'disabled'}${VISIBLE_INTERACTIONS ? `; focusing Chrome via ${FOCUS_CHROME_SCRIPT}` : ' (MCP_VISIBLE_INTERACTIONS=0)'}`);
   });
 })();

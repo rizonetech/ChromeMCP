@@ -62,6 +62,21 @@ MCP_LOG_MAX_MB=8 MCP_LOG_KEEP=4 chromemcp up   # cap at ~40 MB
 
 Supervised mode uses journald's own size/age caps (`journalctl --user --vacuum-size=...` to tune) and does not run the file rotator.
 
+## Playwright artifacts
+
+ChromeMCP keeps automatic Playwright snapshots, screenshots, and console/network
+artifacts out of client repositories. The default location is
+`${XDG_STATE_HOME:-$HOME/.local/state}/chromemcp/artifacts`, capped at 128 MiB.
+
+| Variable | Default | What it does |
+|---|---|---|
+| `PLAYWRIGHT_MCP_OUTPUT_DIR` | `${XDG_STATE_HOME:-$HOME/.local/state}/chromemcp/artifacts` | Global directory for automatic @playwright/mcp output |
+| `PLAYWRIGHT_MCP_OUTPUT_MAX_SIZE` | `134217728` | Maximum artifact-directory size in bytes before @playwright/mcp evicts old output |
+
+Both supervised and ad-hoc stacks honor these upstream @playwright/mcp
+variables. Set them before `chromemcp up` when a different location or cap is
+required.
+
 ## Watchdog / reconnection
 
 | Variable | Default | Effect |

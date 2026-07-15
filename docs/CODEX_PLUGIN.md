@@ -1,5 +1,10 @@
 # ChromeMCP Codex Plugin
 
+> Historical/optional packaging guidance. The current installation uses the
+> standalone user-wide ChromeMCP service and project-scoped `.codex/config.toml`
+> opt-in described in `docs/CLIENTS.md`. Do not install the Rizonetech Codex
+> plugin unless that distribution path is explicitly reintroduced.
+
 ChromeMCP is distributed for Codex from the `rizonetech/codex-plugins` monorepo. The plugin wrapper lives in `plugins/chromemcp-browser`, declares the local HTTP MCP endpoint, and ships agent instructions for reliable Chrome-backed browser testing.
 
 ## Install From A Local Clone

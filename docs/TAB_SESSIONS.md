@@ -3,6 +3,10 @@
 ChromeMCP intentionally uses a shared signed-in Chrome session. Project tab
 sessions are therefore tab hygiene, not full browser isolation.
 
+This shared session is the normal path for every repository and MCP client.
+Allocate a separate lane only for genuinely concurrent actions that would
+collide or for a workflow that explicitly requires isolated browser state.
+
 Use `ProjectTabSession` from `mcp.client` when a QA run needs a bounded
 workspace inside an already-noisy Chrome window:
 
