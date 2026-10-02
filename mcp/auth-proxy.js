@@ -35,6 +35,8 @@ const log = require('./log');
 const { Registry } = require('./metrics');
 const {
   buildChromeRelaunchArgs,
+  decideWatchdogAction,
+  isBrowserDemand,
   resolvePlaywrightOutputConfig,
 } = require('./runtime-config');
 
@@ -284,16 +286,21 @@ for (const sig of ['SIGTERM', 'SIGINT', 'SIGHUP']) {
 // Polls $CDP_ENDPOINT/json/version every PROBE_INTERVAL_MS. On transition
 // to down: log + start short-circuiting /mcp with -32099. On recovery:
 // restart the @playwright/mcp child so it rebuilds the CDP WebSocket.
-// After RELAUNCH_AFTER_MS without recovery: trigger ../chrome to relaunch
-// Chrome on the Windows side (skippable with MCP_NO_AUTO_CHROME=1). After
-// BAIL_AFTER_MS: exit(1) so the supervisor restarts the whole stack.
+// A closed Chrome stays closed until a client sends a tools/call: that
+// triggers ../chrome to relaunch it on the Windows side (skippable with
+// MCP_NO_AUTO_CHROME=1), and BAIL_AFTER_MS after that demand without
+// recovery we exit(1) so the supervisor restarts the whole stack.
+// MCP_CDP_RELAUNCH_IDLE=1 restores the old behavior of relaunching after
+// RELAUNCH_AFTER_MS of downtime whether or not anyone needs the browser.
 const WATCHDOG_DISABLED = process.env.MCP_NO_WATCHDOG === '1';
 const PROBE_INTERVAL_MS  = parseInt(process.env.MCP_CDP_PROBE_INTERVAL_MS  || '10000', 10);
 const RELAUNCH_AFTER_MS  = parseInt(process.env.MCP_CDP_RELAUNCH_AFTER_MS  || '60000', 10);
 const BAIL_AFTER_MS      = parseInt(process.env.MCP_CDP_BAIL_AFTER_MS      || '180000', 10);
+const RELAUNCH_WHEN_IDLE = process.env.MCP_CDP_RELAUNCH_IDLE === '1';
 
 let cdpHealthy        = true;    // optimistic: pre-flight verified CDP before we got here
 let cdpDownSince      = null;    // ms epoch
+let browserDemandSince = null;   // ms epoch of the first tools/call while CDP is down
 // Reconnect counter is now mirrored to mcp_chrome_reconnects_total — read
 // the current value via `metricChromeReconnects.get()`.
 let chromeRelaunchInflight = false;
@@ -348,7 +355,7 @@ async function restartUpstreamForCdpRecovery(downMs) {
   }
 }
 
-function triggerChromeRelaunch() {
+function triggerChromeRelaunch(reason) {
   if (process.env.MCP_NO_AUTO_CHROME === '1') return;
   if (chromeRelaunchInflight) return;
   const chromeScript = path.join(__dirname, '..', 'chrome');
@@ -360,7 +367,7 @@ function triggerChromeRelaunch() {
     profileName: process.env.MCP_CHROME_PROFILE_NAME,
     profileDir: process.env.MCP_CHROME_PROFILE_DIR,
   });
-  log.warn(`CDP down ≥${(RELAUNCH_AFTER_MS/1000)|0}s; firing ${chromeScript} ${chromeArgs.join(' ')} to relaunch Chrome on Windows`);
+  log.warn(`${reason}; firing ${chromeScript} ${chromeArgs.join(' ')} to relaunch Chrome on Windows`);
   const sub = spawn('bash', [chromeScript, ...chromeArgs], { stdio: 'ignore', detached: true });
   sub.on('error', () => {});
   sub.unref();
@@ -376,6 +383,7 @@ async function watchdog() {
       const downMs = now - (cdpDownSince || now);
       cdpHealthy = true;
       cdpDownSince = null;
+      browserDemandSince = null;
       log.info(`CDP reachable again at ${CDP_ENDPOINT}`, { down_seconds: +(downMs/1000).toFixed(1) });
       // Force the upstream to rebuild its CDP WebSocket. Without this, the
       // child may continue erroring against the dead socket.
@@ -388,10 +396,21 @@ async function watchdog() {
     cdpDownSince = now;
     log.warn(`CDP unreachable at ${CDP_ENDPOINT}; short-circuiting /mcp until it recovers`);
   }
-  const downMs = now - cdpDownSince;
-  if (downMs >= RELAUNCH_AFTER_MS) triggerChromeRelaunch();
-  if (downMs >= BAIL_AFTER_MS) {
-    log.error(`CDP unreachable for ≥${(BAIL_AFTER_MS/1000)|0}s; exiting so supervisor restarts the stack`);
+  const action = decideWatchdogAction({
+    now,
+    downSince: cdpDownSince,
+    demandSince: browserDemandSince,
+    relaunchAfterMs: RELAUNCH_AFTER_MS,
+    bailAfterMs: BAIL_AFTER_MS,
+    relaunchWhenIdle: RELAUNCH_WHEN_IDLE,
+  });
+  if (action.relaunch) {
+    triggerChromeRelaunch(browserDemandSince !== null
+      ? 'CDP down and a client is waiting for the browser'
+      : `CDP down ≥${(RELAUNCH_AFTER_MS/1000)|0}s`);
+  }
+  if (action.bail) {
+    log.error(`CDP still unreachable ≥${(BAIL_AFTER_MS/1000)|0}s after it was needed; exiting so supervisor restarts the stack`);
     expectingChildExit = true;
     try { child && child.kill('SIGTERM'); } catch {}
     setTimeout(() => process.exit(1), 500).unref();
@@ -761,18 +780,37 @@ const proxyServer = http.createServer((req, res) => {
     return reply401(res, hadHeader ? 'invalid bearer token' : 'missing Authorization: Bearer <token>');
   }
 
-  // Short-circuit /mcp while CDP is down (G4).
+  // Short-circuit /mcp while CDP is down (G4). A tools/call here is the
+  // demand signal that brings a closed Chrome back.
   if (!cdpHealthy && reqPath.startsWith('/mcp')) {
-    const downSec = Math.max(1, Math.round((Date.now() - (cdpDownSince || Date.now())) / 1000));
-    res.writeHead(503, { 'content-type': 'application/json', 'retry-after': '5' });
-    return res.end(JSON.stringify({
-      jsonrpc: '2.0', id: null,
-      error: {
-        code: -32099,
-        message: `Chrome temporarily unavailable (CDP down ${downSec}s). Retry in a few seconds.`,
-        data: { cdpEndpoint: CDP_ENDPOINT, downSeconds: downSec, reconnects: metricChromeReconnects.get() },
-      },
-    }) + '\n');
+    const replyCdpDown = () => {
+      const downSec = Math.max(1, Math.round((Date.now() - (cdpDownSince || Date.now())) / 1000));
+      res.writeHead(503, { 'content-type': 'application/json', 'retry-after': '5' });
+      res.end(JSON.stringify({
+        jsonrpc: '2.0', id: null,
+        error: {
+          code: -32099,
+          message: `Chrome temporarily unavailable (CDP down ${downSec}s). Retry in a few seconds.`,
+          data: { cdpEndpoint: CDP_ENDPOINT, downSeconds: downSec, reconnects: metricChromeReconnects.get() },
+        },
+      }) + '\n');
+    };
+    if (req.method !== 'POST') return replyCdpDown();
+    const downChunks = [];
+    let downTotal = 0;
+    req.on('data', (chunk) => {
+      downTotal += chunk.length;
+      if (downTotal <= 262144) downChunks.push(chunk);
+    });
+    req.on('end', () => {
+      if (!cdpHealthy && isBrowserDemand(Buffer.concat(downChunks))) {
+        if (browserDemandSince === null) browserDemandSince = Date.now();
+        triggerChromeRelaunch('CDP down and a client is waiting for the browser');
+      }
+      replyCdpDown();
+    });
+    req.on('error', () => { try { res.destroy(); } catch {} });
+    return;
   }
 
   // Track client's incoming session header (subsequent calls in a session

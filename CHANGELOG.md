@@ -4,6 +4,12 @@ All notable changes to ChromeMCP are recorded here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- Closing the ChromeMCP Chrome window no longer brings it back a minute later. The auth proxy watchdog now relaunches Chrome, and restarts the stack, only after a client sends a browser tool call while CDP is down. Set `MCP_CDP_RELAUNCH_IDLE=1` to restore the old timer-driven relaunch.
+
 ## [0.3.1] — 2026-07-15
 
 ### Changed

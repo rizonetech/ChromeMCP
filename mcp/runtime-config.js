@@ -42,8 +42,45 @@ function buildChromeRelaunchArgs({
   return args;
 }
 
+// A browser tool call is the only thing that should bring a closed Chrome
+// back. initialize, tools/list and notifications come from clients that are
+// merely connected, and relaunching for those reopens the window the user
+// just closed.
+function isBrowserDemand(body) {
+  let payload;
+  try {
+    payload = JSON.parse(body.toString('utf8'));
+  } catch {
+    return false;
+  }
+  const messages = Array.isArray(payload) ? payload : [payload];
+  return messages.some((m) => m && m.method === 'tools/call');
+}
+
+// Decides what the CDP watchdog does while Chrome is unreachable. By default
+// it acts only after a client asked for the browser (demandSince): relaunch
+// at once, and exit for a supervisor restart if that has not helped within
+// bailAfterMs. relaunchWhenIdle restores the old timer-driven behavior.
+function decideWatchdogAction({
+  now,
+  downSince,
+  demandSince = null,
+  relaunchAfterMs,
+  bailAfterMs,
+  relaunchWhenIdle = false,
+}) {
+  if (demandSince !== null) {
+    return { relaunch: true, bail: now - demandSince >= bailAfterMs };
+  }
+  if (!relaunchWhenIdle) return { relaunch: false, bail: false };
+  const downMs = now - downSince;
+  return { relaunch: downMs >= relaunchAfterMs, bail: downMs >= bailAfterMs };
+}
+
 module.exports = {
   DEFAULT_PLAYWRIGHT_OUTPUT_MAX_SIZE,
   buildChromeRelaunchArgs,
+  decideWatchdogAction,
+  isBrowserDemand,
   resolvePlaywrightOutputConfig,
 };

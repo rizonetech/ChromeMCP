@@ -23,17 +23,18 @@ If Chrome on Windows crashes, closes, or updates itself, the upstream CDP WebSoc
   {"status":"ok","cdp":{"endpoint":"http://172.x.x.x:9222","healthy":true,"downSeconds":0,"reconnects":3}}
   ```
 - While CDP is down, `/mcp` requests return `HTTP 503` + JSON-RPC error `code: -32099` with `data.downSeconds` so clients can show a useful retry message.
-- After 60 s of CDP down, the proxy fires `chromemcp chrome` once to relaunch Chrome on Windows (suppressed by `MCP_NO_AUTO_CHROME=1`).
+- Closing the Chrome window yourself is respected: the proxy does not relaunch Chrome just because CDP is down. It fires `chromemcp chrome` only when a client sends a browser tool call (`tools/call`) while CDP is down, so Chrome comes back when an agent actually needs it (suppressed by `MCP_NO_AUTO_CHROME=1`). That first call still gets the 503; the client's retry a few seconds later reaches the relaunched Chrome.
 - On CDP recovery the proxy restarts the `@playwright/mcp` child cleanly; the auth-proxy itself stays up and HTTP connections from clients are preserved.
-- After 180 s of CDP down the proxy exits non-zero so systemd (if enabled) restarts the whole stack.
+- If Chrome is still unreachable 180 s after a client needed it, the proxy exits non-zero so systemd (if enabled) restarts the whole stack.
 
 Watchdog knobs:
 
 | Env var | Default | Effect |
 |---|---|---|
 | `MCP_CDP_PROBE_INTERVAL_MS` | `10000` | Time between CDP health probes |
-| `MCP_CDP_RELAUNCH_AFTER_MS` | `60000` | CDP downtime before triggering `chromemcp chrome` |
-| `MCP_CDP_BAIL_AFTER_MS` | `180000` | CDP downtime before exit(1) to force supervisor restart |
+| `MCP_CDP_RELAUNCH_IDLE=1` | unset | Relaunch Chrome after `MCP_CDP_RELAUNCH_AFTER_MS` of downtime even when no client needs it (the previous behavior) |
+| `MCP_CDP_RELAUNCH_AFTER_MS` | `60000` | CDP downtime before triggering `chromemcp chrome`; only used with `MCP_CDP_RELAUNCH_IDLE=1` |
+| `MCP_CDP_BAIL_AFTER_MS` | `180000` | Time after a client needed the browser (or, with `MCP_CDP_RELAUNCH_IDLE=1`, after CDP went down) before exit(1) to force supervisor restart |
 | `MCP_NO_AUTO_CHROME=1` | unset | Suppress the relaunch trigger |
 | `MCP_NO_WATCHDOG=1` | unset | Disable the watchdog entirely |
 

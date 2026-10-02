@@ -7,6 +7,8 @@ const test = require('node:test');
 const {
   DEFAULT_PLAYWRIGHT_OUTPUT_MAX_SIZE,
   buildChromeRelaunchArgs,
+  decideWatchdogAction,
+  isBrowserDemand,
   resolvePlaywrightOutputConfig,
 } = require('../mcp/runtime-config');
 
@@ -70,4 +72,41 @@ test('watchdog relaunch falls back to exported or default CDP ports', () => {
     buildChromeRelaunchArgs({ cdpEndpoint: 'not a URL', cdpPort: '70000' }),
     ['-Port', '9222'],
   );
+});
+
+test('only tools/call counts as browser demand', () => {
+  const call = (body) => isBrowserDemand(Buffer.from(JSON.stringify(body)));
+  assert.equal(call({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'browser_tabs' } }), true);
+  assert.equal(call([{ method: 'tools/list' }, { method: 'tools/call' }]), true);
+  assert.equal(call({ jsonrpc: '2.0', id: 1, method: 'initialize' }), false);
+  assert.equal(call({ jsonrpc: '2.0', id: 2, method: 'tools/list' }), false);
+  assert.equal(call({ jsonrpc: '2.0', method: 'notifications/initialized' }), false);
+  assert.equal(isBrowserDemand(Buffer.from('not json')), false);
+  assert.equal(isBrowserDemand(Buffer.alloc(0)), false);
+});
+
+test('watchdog leaves a closed Chrome alone while no client needs it', () => {
+  assert.deepEqual(decideWatchdogAction({
+    now: 10_000_000, downSince: 0, demandSince: null,
+    relaunchAfterMs: 60_000, bailAfterMs: 180_000,
+  }), { relaunch: false, bail: false });
+});
+
+test('watchdog relaunches immediately and bails late once a client asks for the browser', () => {
+  const base = { downSince: 0, relaunchAfterMs: 60_000, bailAfterMs: 180_000 };
+  assert.deepEqual(
+    decideWatchdogAction({ ...base, now: 500_000, demandSince: 499_000 }),
+    { relaunch: true, bail: false },
+  );
+  assert.deepEqual(
+    decideWatchdogAction({ ...base, now: 700_000, demandSince: 500_000 }),
+    { relaunch: true, bail: true },
+  );
+});
+
+test('idle relaunch can be restored explicitly', () => {
+  const base = { downSince: 0, demandSince: null, relaunchAfterMs: 60_000, bailAfterMs: 180_000, relaunchWhenIdle: true };
+  assert.deepEqual(decideWatchdogAction({ ...base, now: 30_000 }), { relaunch: false, bail: false });
+  assert.deepEqual(decideWatchdogAction({ ...base, now: 60_000 }), { relaunch: true, bail: false });
+  assert.deepEqual(decideWatchdogAction({ ...base, now: 180_000 }), { relaunch: true, bail: true });
 });

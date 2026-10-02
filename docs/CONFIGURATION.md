@@ -82,8 +82,9 @@ required.
 | Variable | Default | Effect |
 |---|---|---|
 | `MCP_CDP_PROBE_INTERVAL_MS` | `10000` | Time between CDP health probes |
-| `MCP_CDP_RELAUNCH_AFTER_MS` | `60000` | CDP downtime before triggering `chromemcp chrome` |
-| `MCP_CDP_BAIL_AFTER_MS` | `180000` | CDP downtime before exit(1) to force supervisor restart |
+| `MCP_CDP_RELAUNCH_IDLE=1` | unset | Relaunch Chrome after `MCP_CDP_RELAUNCH_AFTER_MS` of downtime even when no client needs it (the previous behavior) |
+| `MCP_CDP_RELAUNCH_AFTER_MS` | `60000` | CDP downtime before triggering `chromemcp chrome`; only used with `MCP_CDP_RELAUNCH_IDLE=1` |
+| `MCP_CDP_BAIL_AFTER_MS` | `180000` | Time after a client needed the browser (or, with `MCP_CDP_RELAUNCH_IDLE=1`, after CDP went down) before exit(1) to force supervisor restart |
 | `MCP_NO_WATCHDOG=1` | unset | Disable the watchdog entirely |
 
 See [`docs/TROUBLESHOOTING.md`](TROUBLESHOOTING.md) for the full reconnection behaviour.
