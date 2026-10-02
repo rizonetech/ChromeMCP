@@ -29,7 +29,32 @@ Everything below is graded against these two first, then against OSS / productio
 ## 🔴 Critical
 
 ### G1. Pin to a stable Playwright MCP release
-**Why it matters.** `mcp/package.json` pins `@playwright/mcp@0.0.74`, transitively pulling `playwright-core@1.60.0-alpha-1778101408000`. Pre-release software has no API stability contract — tool names, argument shapes, and protocol details can shift between any two builds.
+**Why it matters.** `mcp/package.json` pins `@playwright/mcp@0.0.76` (released 2026-06-10) and overrides `playwright` / `playwright-core` to `1.61.0-alpha-1781023400000`. Pre-release software has no API stability contract: tool names, argument shapes, and protocol details can shift between any two builds.
+
+**Status 2026-10-02.** Latest upstream is `@playwright/mcp@0.0.83` (2026-09-28), seven releases ahead. Every upstream release so far, 0.0.83 included, depends on an alpha Playwright (`1.64.0-alpha-1790635538000` for 0.0.83), so the "non-alpha" acceptance criterion below cannot be met by any published version. Treat it as "exact pin, overrides in lockstep with upstream" until upstream ships a stable line.
+
+#### Next bump: 0.0.76 to 0.0.83
+
+Prerequisites (check before touching `mcp/package.json`):
+
+- [ ] Decide what to do with the `overrides` block in `mcp/package.json`. It pins exactly what 0.0.76 already depends on, so it is redundant today; on the bump either update both entries to `1.64.0-alpha-1790635538000` or drop the block. Leaving it at 1.61 would force 0.0.83 onto an older Playwright than it was built for.
+- [ ] Confirm the flags `mcp/auth-proxy.js:232` passes upstream still exist in 0.0.83: `--port`, `--host`, `--allowed-hosts`, `--cdp-endpoint`, `--shared-browser-context`. (0.0.79 removed `--output-mode`; ChromeMCP does not pass it.)
+- [ ] Check the Chrome on Windows against the Playwright 1.64 alpha, and whether `MCP_CHROME_MAX_MAJOR` (default 150 in `mcp/start.sh`) needs raising. The 0.0.83 notes say WebMCP needs Chromium 155+.
+- [ ] Decide on WebMCP (0.0.82). Pages can now register tools that appear as `webmcp_<tool>` in the tool list, with names, schemas and results supplied by the page. On a shared, signed-in Chrome that is untrusted input reaching every client. Recommended default: add `--no-webmcp` to the default upstream extras (`mcp/auth-proxy.js:242`) and document how to opt in.
+- [ ] Bound metric cardinality before enabling WebMCP. `mcp/auth-proxy.js:848` labels `mcp_tool_calls_total` with the raw `params.name`, which assumes a fixed tool surface; `webmcp_<tool>` names come from arbitrary pages. Collapse any `webmcp_*` name to one label.
+- [ ] Confirm the auth proxy forwards `notifications/tools/list_changed` on the SSE stream (0.0.82 sends it when the WebMCP list changes), or that it is moot with `--no-webmcp`.
+- [ ] Re-check `browser_close`. Since 0.0.81 it returns an error under `--shared-browser-context` instead of breaking the session; update `mcp/tests/COVERAGE.md` (currently untested because it orphaned the context) and `mcp/tests/test_tabs.py`.
+- [ ] Re-baseline screenshot and viewport expectations. Since 0.0.78, CDP attaches pass `noDefaults`, so attaching no longer applies default context options (viewport and similar) to the real Chrome.
+- [ ] Consider `--file-paths=absolute` (0.0.82). Artifacts already live outside any workspace (`~/.local/state/chromemcp/artifacts`), so clients cannot resolve the relative links upstream returns by default.
+
+Bump steps:
+
+- [ ] Update `mcp/package.json` and regenerate `mcp/package-lock.json` (`npm install` in `mcp/`), then confirm `npm ci` resolves `@playwright/mcp@0.0.83` and the matching Playwright alpha.
+- [ ] Run `node --test tests/*.test.js`, `bash mcp/test.sh`, `bash mcp/tests/run-all.sh` and `bash mcp/demo-visible.sh` against the live Chrome.
+- [ ] Restart the service (`systemctl --user restart chromemcp`) and confirm `/healthz` is healthy and both a Claude and a Codex client can list and call tools.
+- [ ] Record the upgrade, the WebMCP decision and any behavior changes in `CHANGELOG.md`, and the tested version in `README.md`.
+
+General G1 tasks:
 
 - [ ] Subscribe to `@playwright/mcp` releases: watch https://github.com/microsoft/playwright-mcp/releases
 - [ ] Audit the changelog of any candidate stable release for breaking tool-name / argument changes
@@ -153,6 +178,14 @@ Microsoft has changed WSL2's subnet allocation in past Windows updates. If they 
 **Acceptance criteria.** `Setup-Bridge.cmd` succeeds and produces a correctly-masked firewall rule on hosts where the WSL2 prefix length is anything other than /20.
 
 ---
+
+### G16. Service start forces Chrome open
+**Why it matters.** Since the watchdog became demand-driven (2026-10-02), a closed Chrome stays closed while the proxy runs. But `mcp/start.sh:298` still exits 1 when CDP is unreachable at startup, after auto-launching Chrome (`mcp/start.sh` pre-flight). So every `systemctl --user restart chromemcp`, crash restart, or WSL boot with the unit enabled pops the Chrome window up again, and with `MCP_NO_AUTO_CHROME=1` the service cannot start at all while Chrome is closed.
+
+- [ ] Let the proxy start with CDP down (watchdog starts in the down state) instead of failing the pre-flight
+- [ ] Keep the eager Chrome launch for an interactive `chromemcp up`, skip it for supervised (`--foreground`) starts
+
+**Acceptance criteria.** With Chrome closed, `systemctl --user restart chromemcp` leaves Chrome closed and the service active; the first browser `tools/call` opens Chrome.
 
 ## 🟡 Medium
 
